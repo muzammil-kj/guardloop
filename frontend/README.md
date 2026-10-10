@@ -1,36 +1,129 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Good — let's design this properly as a real product, not just scale up the MVP. Here's the full plan.
 
-## Getting Started
+## What's missing from the MVP (the gap between "demo" and "real system")
 
-First, run the development server:
+- **No real authentication** — anyone with the URL can see the dashboard; the ingestion API accepts data from anyone
+- **Static, hardcoded threshold** — one global confidence number, not configurable per agent or team
+- **No multi-tenancy** — can't onboard a second team/company without them seeing your data
+- **Polling only** — dashboard has to manually refresh, no live updates
+- **No alerting** — if escalations pile up, nobody gets notified unless they're staring at the dashboard
+- **Confidence is taken at face value** — if an agent reports 0.95 confidence but is actually wrong, Guardloop has no way to catch that
+- **No SDK** — every integration means hand-writing a raw webhook call
+- **No tests, no CI/CD** — nothing stops a bad deploy from breaking production
+- **Cost tracking is naive** — no budgets, no auto-throttling when an agent gets expensive
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Fixing these, properly, is what makes this an advanced system rather than a weekend project.
+
+## New tech stack additions
+
+| Layer | Addition | Why |
+|---|---|---|
+| Auth | **Supabase Auth** | Real login, per-organization accounts, API key issuance |
+| Realtime | **Supabase Realtime** (Postgres changefeeds) | Live dashboard updates with no polling, built on infra you already have |
+| Background jobs | **Redis + RQ** (or Supabase Edge Functions on a cron) | Cost rollups, budget checks, alert dispatch, off the request path |
+| Policy engine | Custom rules table + evaluator | Per-agent, per-team configurable thresholds instead of one global number |
+| Anomaly detection | **Secondary LLM "judge" call** (Gemini) | Re-evaluates a sample of "approved" events to catch overconfident wrong answers the first model missed |
+| Alerting | **Slack/Discord webhook integration** | Notify a team the moment the escalation queue backs up or a budget is breached |
+| SDK | **PyPI package** (`guardloop-sdk`) | `pip install guardloop-sdk`, three lines of code instead of raw HTTP |
+| Observability | **structlog + OpenTelemetry** | Proper structured logs and request tracing on the backend itself |
+| Testing | **pytest + GitHub Actions CI** | Nothing ships without tests passing |
+| Containerization | **Docker + docker-compose** | Consistent local dev, easier to hand off/deploy anywhere later |
+
+## New file/module structure
+
+```
+guardloop/
+  backend/
+    app/
+      main.py                    # FastAPI app entrypoint
+      config.py                  # Settings via pydantic-settings
+      auth/
+        dependencies.py          # API key + JWT verification
+        api_keys.py              # Issue/revoke org API keys
+      policies/
+        models.py                # Rule schema (per-agent thresholds, hard gates)
+        evaluator.py             # Replaces escalation_logic.py, now DB-driven
+      ingestion/
+        routes.py                # POST /ingest, now auth-protected
+      judge/
+        sampler.py                # Picks a % of approved events to re-check
+        evaluate.py                # Calls Gemini to re-judge sampled events
+      alerts/
+        dispatcher.py              # Sends Slack/Discord alerts
+        rules.py                   # "queue > N" / "budget > $X" trigger conditions
+      costs/
+        rollup_worker.py           # RQ background job, runs on schedule
+      api/
+        events.py
+        escalations.py
+        costs.py
+        organizations.py           # Multi-tenant org/team management
+      db/
+        supabase_client.py
+        schema.sql
+    tests/
+      test_policy_evaluator.py
+      test_ingestion_auth.py
+      test_judge_sampling.py
+    worker.py                      # RQ worker process
+    requirements.txt
+    Dockerfile
+    docker-compose.yml             # backend + redis locally
+
+  sdk/
+    guardloop_sdk/
+      __init__.py
+      client.py                    # GuardloopClient class, used as: client.report(event)
+    pyproject.toml                 # for PyPI publishing
+
+  frontend/
+    app/
+      (auth)/login/page.tsx
+      (auth)/signup/page.tsx
+      dashboard/page.tsx
+      dashboard/settings/page.tsx  # per-agent threshold config, API keys, alert channels
+      dashboard/agents/[id]/page.tsx  # drill-down per agent
+    lib/
+      api.ts
+      realtime.ts                  # Supabase Realtime subscription hook
+    middleware.ts                  # route protection
+
+  .github/
+    workflows/
+      ci.yml                       # run backend tests + frontend build on every PR
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## How it all connects (end to end)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. A team signs up → gets an **organization** + an **API key**
+2. Their agent (n8n, Python script, whatever) uses the **SDK**: `client.report(agent_name="...", confidence=0.6, ...)`
+3. SDK sends an authenticated request to `/ingest`
+4. The **policy evaluator** checks org-specific rules (not a global constant) to decide approve/escalate
+5. If approved, a **random sample** gets queued for the **judge** to double-check later (catches miscalibrated confidence)
+6. Every write triggers **Supabase Realtime**, so the dashboard updates live, no refresh
+7. A background **worker** rolls up costs hourly and checks budgets; if breached, or if the escalation queue crosses a threshold, it fires a **Slack/Discord alert**
+8. The dashboard's new **settings page** lets a team configure their own thresholds, invite teammates, manage API keys, and set alert channels
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Phased build order (so this stays manageable)
 
-## Learn More
+1. **Phase 1 — Auth & multi-tenancy:** organizations, API keys, protected `/ingest`
+2. **Phase 2 — Policy engine:** move thresholds from hardcoded to DB-driven, per-agent
+3. **Phase 3 — SDK:** publish `guardloop-sdk` to PyPI, rewrite one real integration (your Task 6 n8n workflow) to use it instead of a raw webhook
+4. **Phase 4 — Realtime + alerts:** Supabase Realtime on the dashboard, Slack/Discord alerting worker
+5. **Phase 5 — Judge/anomaly detection:** the secondary LLM-review layer, the most technically interesting piece
+6. **Phase 6 — Tests + CI/CD + Docker:** lock it down so it's genuinely production-grade, not just working
 
-To learn more about Next.js, take a look at the following resources:
+Each phase is independently demoable, so you always have something working rather than a half-finished rewrite.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Want to start with Phase 1 (auth + multi-tenancy) right now, same file-by-file build process as before?
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+6 total phases, as laid out earlier:
 
-## Deploy on Vercel
+1. **Auth & multi-tenancy** ✅ just finished
+2. **Policy engine** — per-agent, per-org configurable thresholds instead of one global constant (next up)
+3. **SDK** — publish `guardloop-sdk` to PyPI, rewire your Task 6 n8n workflow to use it instead of a raw webhook
+4. **Realtime + alerts** — Supabase Realtime on the dashboard (no more manual refresh), Slack/Discord alerts when the escalation queue backs up or a budget is breached
+5. **Judge/anomaly detection** — a secondary LLM re-checks a sample of "approved" events to catch cases where the agent was confidently wrong, the most technically interesting phase
+6. **Tests + CI/CD + Docker** — GitHub Actions running your test suite on every PR, docker-compose for local dev, genuinely locked down and production-grade rather than just working
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Each one is independently demoable, so after every phase you have something real to show, not a half-finished rewrite. Want to start Phase 2 now?

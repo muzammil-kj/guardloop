@@ -30,7 +30,7 @@ export default function DashboardPage() {
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    if (!window.localStorage.getItem("guardloop_demo_session")) {
+    if (!window.localStorage.getItem("guardloop_api_key")) {
       router.push("/");
       return;
     }
@@ -89,7 +89,7 @@ export default function DashboardPage() {
         </div>
         <button
           onClick={() => {
-            window.localStorage.removeItem("guardloop_demo_session");
+            window.localStorage.removeItem("guardloop_api_key");
             router.push("/");
           }}
           className="text-sm text-slate-400 hover:text-slate-200 border border-slate-800 rounded-md px-3 py-1.5"

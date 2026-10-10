@@ -1,15 +1,27 @@
-"""
-Generates ~40 realistic fake events across 3 simulated agents, so the
-dashboard has something meaningful to show the moment it's deployed,
-without needing a live agent connected yet.
 
-Run with: python seed_data.py
 """
+Seeds realistic demo events across 3 simulated agents.
+
+Run from the backend directory:
+    python seed_data.py
+"""
+
 import random
-from datetime import datetime, timedelta
-from database import supabase
+from datetime import datetime, timedelta, timezone
 
-AGENTS = ["email-triage-agent", "support-chat-agent", "data-entry-agent"]
+from app.db.supabase_client import get_supabase
+
+supabase = get_supabase()
+
+DEMO_ORG_ID = "00000000-0000-0000-0000-000000000001"
+DEMO_ORG_NAME = "Guardloop Demo Organization"
+CONFIDENCE_THRESHOLD = 0.75
+
+AGENTS = [
+    "email-triage-agent",
+    "support-chat-agent",
+    "data-entry-agent",
+]
 
 EVENT_SAMPLES = {
     "email-triage-agent": [
@@ -34,47 +46,117 @@ EVENT_SAMPLES = {
 }
 
 
+def ensure_demo_organization():
+    existing = (
+        supabase.table("organizations")
+        .select("id")
+        .eq("id", DEMO_ORG_ID)
+        .execute()
+    )
+
+    if existing.data:
+        print("Demo organization already exists.")
+        return
+
+    supabase.table("organizations").insert({
+        "id": DEMO_ORG_ID,
+        "name": DEMO_ORG_NAME,
+    }).execute()
+
+    print("Created demo organization.")
+
+
 def random_timestamp_within_last_days(days: int) -> str:
     delta = timedelta(
         days=random.randint(0, days),
         hours=random.randint(0, 23),
         minutes=random.randint(0, 59),
     )
-    ts = datetime.utcnow() - delta
-    return ts.isoformat()
+    timestamp = datetime.now(timezone.utc) - delta
+    return timestamp.isoformat()
 
 
 def seed():
+    ensure_demo_organization()
+
+    # Avoid accidentally inserting another full batch.
+    existing = (
+        supabase.table("agent_events")
+        .select("id")
+        .eq("organization_id", DEMO_ORG_ID)
+        .limit(1)
+        .execute()
+    )
+
+    if existing.data:
+        print(
+            "Demo events already exist. No new events were inserted. "
+            "If you want to reseed, inspect the existing demo data first."
+        )
+        return
+
     inserted = 0
+    escalations_inserted = 0
+
     for agent in AGENTS:
-        samples = EVENT_SAMPLES[agent]
-        for _ in range(12):  # ~12 per agent, ~36 total, close to the ~40 target
-            input_summary, output_summary, base_confidence = random.choice(samples)
-            confidence = round(min(0.99, max(0.30, base_confidence + random.uniform(-0.1, 0.05))), 2)
-            status = "escalated" if confidence < 0.75 else "approved"
+        for _ in range(12):
+            input_summary, output_summary, base_confidence = random.choice(
+                EVENT_SAMPLES[agent]
+            )
+
+            confidence = round(
+                min(
+                    0.99,
+                    max(
+                        0.30,
+                        base_confidence + random.uniform(-0.1, 0.05),
+                    ),
+                ),
+                2,
+            )
+
+            status = (
+                "escalated"
+                if confidence < CONFIDENCE_THRESHOLD
+                else "approved"
+            )
             cost = round(random.uniform(0.0005, 0.01), 6)
 
-            event = supabase.table("agent_events").insert({
-                "agent_name": agent,
-                "event_type": "classification",
-                "input_summary": input_summary,
-                "output_summary": output_summary,
-                "confidence": confidence,
-                "status": status,
-                "cost_usd": cost,
-                "created_at": random_timestamp_within_last_days(6),
-            }).execute()
+            event = (
+                supabase.table("agent_events")
+                .insert({
+                    "organization_id": DEMO_ORG_ID,
+                    "agent_name": agent,
+                    "event_type": "classification",
+                    "input_summary": input_summary,
+                    "output_summary": output_summary,
+                    "confidence": confidence,
+                    "status": status,
+                    "cost_usd": cost,
+                    "created_at": random_timestamp_within_last_days(6),
+                })
+                .execute()
+            )
 
             if status == "escalated":
                 supabase.table("escalations").insert({
+                    "organization_id": DEMO_ORG_ID,
                     "event_id": event.data[0]["id"],
-                    "reason": f"Confidence {confidence} below threshold 0.75.",
+                    "reason": (
+                        f"Confidence {confidence} below threshold "
+                        f"{CONFIDENCE_THRESHOLD}."
+                    ),
                     "status": "pending",
                 }).execute()
 
+                escalations_inserted += 1
+
             inserted += 1
 
-    print(f"Seeded {inserted} events across {len(AGENTS)} agents.")
+    print(
+        f"Seeded {inserted} events and {escalations_inserted} pending "
+        f"escalations for {DEMO_ORG_NAME}."
+    )
 
 
 if __name__ == "__main__":

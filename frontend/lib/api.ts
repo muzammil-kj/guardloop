@@ -31,14 +31,39 @@ export interface AgentCost {
   event_count: number;
 }
 
+export interface OrganizationCreated {
+  organization_id: string;
+  name: string;
+  api_key: string;
+}
+
+function getStoredApiKey(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem("guardloop_api_key");
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const apiKey = getStoredApiKey();
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
     ...options,
   });
+
+  if (res.status === 401) {
+    // Key is missing, invalid, or revoked - clear it and send the user back
+    // to sign in again rather than showing a confusing broken dashboard.
+    window.localStorage.removeItem("guardloop_api_key");
+    window.location.href = "/";
+    throw new Error("Unauthorized");
+  }
+
   if (!res.ok) {
     throw new Error(`Request to ${path} failed with status ${res.status}`);
   }
+
   return res.json();
 }
 
@@ -58,3 +83,15 @@ export const resolveEscalation = (
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+
+export async function createOrganization(name: string): Promise<OrganizationCreated> {
+  const res = await fetch(`${API_URL}/organizations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    throw new Error("Failed to create organization");
+  }
+  return res.json();
+}
