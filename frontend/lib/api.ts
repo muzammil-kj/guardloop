@@ -104,7 +104,10 @@ export const setDefaultPolicy = (payload: PolicyUpdatePayload) =>
     body: JSON.stringify(payload),
   });
 
-export const setAgentPolicy = (agentName: string, payload: PolicyUpdatePayload) =>
+export const setAgentPolicy = (
+  agentName: string,
+  payload: PolicyUpdatePayload
+) =>
   request<Policy>(`/policies/${encodeURIComponent(agentName)}`, {
     method: "PUT",
     body: JSON.stringify(payload),
