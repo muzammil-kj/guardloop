@@ -17,3 +17,8 @@ frontend/.env.local
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+.pytest_cache/

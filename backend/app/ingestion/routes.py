@@ -12,7 +12,14 @@ router = APIRouter(tags=["ingestion"])
 @router.post("/ingest")
 async def ingest_event(event: IngestEvent, org: dict = Depends(get_current_org)):
     supabase = get_supabase()
-    escalate, reason = should_escalate(event.confidence, event.force_escalate)
+    escalate, reason = should_escalate(
+        supabase,
+        org["id"],
+        event.agent_name,
+        event.event_type,
+        event.confidence,
+        event.force_escalate,
+    )
     reason = event.escalate_reason or reason
     status = "escalated" if escalate else "approved"
 

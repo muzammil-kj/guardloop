@@ -47,3 +47,15 @@ class ApiKeyInfo(BaseModel):
     revoked: bool
     last_used_at: Optional[str] = None
     created_at: str
+
+
+class PolicyUpdate(BaseModel):
+    confidence_threshold: float
+    hard_escalate_event_types: list[str] = []
+
+
+class PolicyInfo(BaseModel):
+    agent_name: Optional[str] = None  # None = this org's default policy
+    confidence_threshold: float
+    hard_escalate_event_types: list[str]
+    updated_at: str

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   BarChart,
   Bar,
@@ -87,15 +88,23 @@ export default function DashboardPage() {
             Live view of every agent decision, what got escalated, and what it's costing you.
           </p>
         </div>
-        <button
-          onClick={() => {
-            window.localStorage.removeItem("guardloop_api_key");
-            router.push("/");
-          }}
-          className="text-sm text-slate-400 hover:text-slate-200 border border-slate-800 rounded-md px-3 py-1.5"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/dashboard/settings"
+            className="text-sm text-slate-400 hover:text-slate-200 border border-slate-800 rounded-md px-3 py-1.5"
+          >
+            Policy settings
+          </Link>
+          <button
+            onClick={() => {
+              window.localStorage.removeItem("guardloop_api_key");
+              router.push("/");
+            }}
+            className="text-sm text-slate-400 hover:text-slate-200 border border-slate-800 rounded-md px-3 py-1.5"
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
       {errorMsg && (

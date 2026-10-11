@@ -37,6 +37,18 @@ export interface OrganizationCreated {
   api_key: string;
 }
 
+export interface Policy {
+  agent_name: string | null; // null = this org's default policy
+  confidence_threshold: number;
+  hard_escalate_event_types: string[];
+  updated_at: string;
+}
+
+export interface PolicyUpdatePayload {
+  confidence_threshold: number;
+  hard_escalate_event_types: string[];
+}
+
 function getStoredApiKey(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem("guardloop_api_key");
@@ -82,6 +94,25 @@ export const resolveEscalation = (
   request(`/escalations/${id}/resolve`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+
+export const getPolicies = () => request<Policy[]>(`/policies`);
+
+export const setDefaultPolicy = (payload: PolicyUpdatePayload) =>
+  request<Policy>(`/policies/default`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+
+export const setAgentPolicy = (agentName: string, payload: PolicyUpdatePayload) =>
+  request<Policy>(`/policies/${encodeURIComponent(agentName)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+
+export const deleteAgentPolicy = (agentName: string) =>
+  request(`/policies/${encodeURIComponent(agentName)}`, {
+    method: "DELETE",
   });
 
 export async function createOrganization(name: string): Promise<OrganizationCreated> {
