@@ -8,7 +8,12 @@ import {
   setDefaultPolicy,
   setAgentPolicy,
   deleteAgentPolicy,
+  listAlertChannels,
+  createAlertChannel,
+  testAlertChannel,
+  deleteAlertChannel,
   Policy,
+  AlertChannel,
 } from "@/lib/api";
 
 function PolicyEditor({
@@ -101,6 +106,194 @@ function PolicyEditor({
         {savedMsg && <span className="text-xs text-slate-500">{savedMsg}</span>}
       </div>
     </div>
+  );
+}
+
+function AlertChannelsSection() {
+  const [channels, setChannels] = useState<AlertChannel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [channelType, setChannelType] = useState<"discord" | "slack">("discord");
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [queueThreshold, setQueueThreshold] = useState(10);
+  const [dailyBudget, setDailyBudget] = useState(5);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState<Record<number, string>>({});
+
+  async function reload() {
+    setChannels(await listAlertChannels());
+  }
+
+  useEffect(() => {
+    reload()
+      .catch(() => setFormError("Could not load alert channels."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError("");
+    setSaving(true);
+    try {
+      await createAlertChannel({
+        channel_type: channelType,
+        webhook_url: webhookUrl.trim(),
+        queue_depth_threshold: queueThreshold,
+        daily_budget_usd: dailyBudget,
+      });
+      setWebhookUrl("");
+      await reload();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not add channel.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest(id: number) {
+    setTestResult((prev) => ({ ...prev, [id]: "Sending..." }));
+    try {
+      await testAlertChannel(id);
+      setTestResult((prev) => ({ ...prev, [id]: "Test message sent." }));
+    } catch (err) {
+      setTestResult((prev) => ({
+        ...prev,
+        [id]: err instanceof Error ? err.message : "Test failed.",
+      }));
+    }
+  }
+
+  async function handleDelete(id: number) {
+    await deleteAlertChannel(id);
+    await reload();
+  }
+
+  return (
+    <section className="max-w-2xl mt-12">
+      <h2 className="text-lg font-semibold text-slate-50">Alerts</h2>
+      <p className="text-sm text-slate-400 mt-1 mb-6">
+        Get a Discord or Slack message when escalations pile up or your daily
+        agent spend reaches its budget. Checks run every few minutes. Webhook
+        URLs are stored on the server and are never shown again after saving.
+      </p>
+
+      {loading ? (
+        <p className="text-sm text-slate-500">Loading alert channels...</p>
+      ) : (
+        <ul className="space-y-3 mb-6">
+          {channels.length === 0 && (
+            <li className="text-sm text-slate-500">No alert channels yet.</li>
+          )}
+          {channels.map((channel) => (
+            <li
+              key={channel.id}
+              className="border border-slate-800 rounded-lg p-4 bg-slate-900/40"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-slate-200 capitalize">
+                    {channel.channel_type}{" "}
+                    <span className="text-slate-500 normal-case">
+                      {channel.webhook_hint}
+                    </span>
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Alert at {channel.queue_depth_threshold} pending escalations,
+                    or ${channel.daily_budget_usd.toFixed(2)} spent per day.
+                  </p>
+                </div>
+                <div className="flex gap-3 shrink-0">
+                  <button
+                    onClick={() => handleTest(channel.id)}
+                    className="text-xs text-amber-400 hover:text-amber-300"
+                  >
+                    Send test alert
+                  </button>
+                  <button
+                    onClick={() => handleDelete(channel.id)}
+                    className="text-xs text-slate-400 hover:text-slate-200"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+              {testResult[channel.id] && (
+                <p className="text-xs text-slate-400 mt-2">{testResult[channel.id]}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form
+        onSubmit={handleAdd}
+        className="border border-dashed border-slate-700 rounded-lg p-5"
+      >
+        <h3 className="text-sm font-medium text-slate-200 mb-4">Add a channel</h3>
+
+        <label className="block text-xs text-slate-400 mb-1.5">Service</label>
+        <select
+          value={channelType}
+          onChange={(e) => setChannelType(e.target.value as "discord" | "slack")}
+          className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 mb-4 focus:outline-none focus:ring-2 focus:ring-amber-500"
+        >
+          <option value="discord">Discord</option>
+          <option value="slack">Slack</option>
+        </select>
+
+        <label className="block text-xs text-slate-400 mb-1.5">Webhook URL</label>
+        <input
+          type="password"
+          autoComplete="off"
+          placeholder={
+            channelType === "discord"
+              ? "https://discord.com/api/webhooks/..."
+              : "https://hooks.slack.com/services/..."
+          }
+          value={webhookUrl}
+          onChange={(e) => setWebhookUrl(e.target.value)}
+          className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 mb-4 focus:outline-none focus:ring-2 focus:ring-amber-500"
+        />
+
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">
+              Alert when pending escalations reach
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={queueThreshold}
+              onChange={(e) => setQueueThreshold(Number(e.target.value))}
+              className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">
+              Daily budget (USD)
+            </label>
+            <input
+              type="number"
+              min={0.01}
+              step={0.5}
+              value={dailyBudget}
+              onChange={(e) => setDailyBudget(Number(e.target.value))}
+              className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+        </div>
+
+        {formError && <p className="text-sm text-amber-400 mb-4">{formError}</p>}
+
+        <button
+          type="submit"
+          disabled={saving || !webhookUrl.trim()}
+          className="text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-medium rounded-md px-3 py-1.5 disabled:opacity-50"
+        >
+          {saving ? "Adding..." : "Add channel"}
+        </button>
+      </form>
+    </section>
   );
 }
 
@@ -228,6 +421,8 @@ export default function SettingsPage() {
           </button>
         )}
       </section>
+
+      <AlertChannelsSection />
     </main>
   );
 }

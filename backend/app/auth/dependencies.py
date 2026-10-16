@@ -1,22 +1,41 @@
-from fastapi import Header, HTTPException
+
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
 from app.auth.api_keys import hash_key
 from app.db.supabase_client import get_supabase
 
 
-async def get_current_org(authorization: str = Header(None)) -> dict:
+bearer_scheme = HTTPBearer(
+    scheme_name="BearerAuth",
+    description="Enter your Guardloop API key without the 'Bearer ' prefix.",
+    auto_error=False,
+)
+
+
+async def get_current_org(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict:
     """
-    Every protected route depends on this. It reads the Authorization header,
-    verifies the API key against its stored hash, and returns the calling
-    organization. Nothing downstream ever sees another org's data, because
-    every query in this app filters by the organization_id this returns.
+    Validate the organization API key and return its organization.
+    Every protected route must depend on this function.
     """
-    if not authorization or not authorization.startswith("Bearer "):
+    if credentials is None:
         raise HTTPException(
             status_code=401,
-            detail="Missing or malformed Authorization header. Expected: Bearer <api_key>",
+            detail="Missing Authorization header. Expected: Bearer <api_key>",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-    raw_key = authorization.removeprefix("Bearer ").strip()
+    raw_key = credentials.credentials.strip()
+
+    if not raw_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing API key.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     hashed = hash_key(raw_key)
     supabase = get_supabase()
 
@@ -29,11 +48,16 @@ async def get_current_org(authorization: str = Header(None)) -> dict:
     )
 
     if not result.data:
-        raise HTTPException(status_code=401, detail="Invalid or revoked API key.")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or revoked API key.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     key_row = result.data[0]
-    supabase.table("api_keys").update({"last_used_at": "now()"}).eq(
-        "id", key_row["id"]
-    ).execute()
+
+    supabase.table("api_keys").update(
+        {"last_used_at": "now()"}
+    ).eq("id", key_row["id"]).execute()
 
     return key_row["organizations"]

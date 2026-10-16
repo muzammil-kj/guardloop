@@ -7,6 +7,9 @@ from app.api.escalations import router as escalations_router
 from app.api.costs import router as costs_router
 from app.api.organizations import router as organizations_router
 from app.api.policies import router as policies_router
+from app.api.realtime import router as realtime_router
+from app.api.alert_channels import router as alert_channels_router
+from app.api.internal import router as internal_router
 
 app = FastAPI(title="Guardloop API")
 
@@ -29,3 +32,6 @@ app.include_router(events_router)
 app.include_router(escalations_router)
 app.include_router(costs_router)
 app.include_router(policies_router)
+app.include_router(realtime_router)
+app.include_router(alert_channels_router)
+app.include_router(internal_router)

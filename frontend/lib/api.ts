@@ -49,6 +49,56 @@ export interface PolicyUpdatePayload {
   hard_escalate_event_types: string[];
 }
 
+export interface RealtimeToken {
+  token: string;
+  organization_id: string;
+}
+
+export interface AlertChannel {
+  id: number;
+  channel_type: "discord" | "slack";
+  webhook_hint: string; // masked; the full webhook URL is never returned
+  queue_depth_threshold: number;
+  daily_budget_usd: number;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface AlertChannelPayload {
+  channel_type: "discord" | "slack";
+  webhook_url: string;
+  queue_depth_threshold: number;
+  daily_budget_usd: number;
+}
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body?.detail === "string") return body.detail;
+    if (Array.isArray(body?.detail)) {
+      // FastAPI validation errors: [{ msg: "Value error, ..." }, ...]
+      return body.detail
+        .map((d: { msg?: string }) =>
+          (d.msg ?? "Invalid value").replace(/^Value error, /, "")
+        )
+        .join("; ");
+    }
+  } catch {
+    // Response was not JSON; use the fallback below.
+  }
+  return fallback;
+}
+
 function getStoredApiKey(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem("guardloop_api_key");
@@ -73,7 +123,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    throw new Error(`Request to ${path} failed with status ${res.status}`);
+    throw new ApiError(
+      res.status,
+      await readErrorMessage(res, `Request to ${path} failed with status ${res.status}`)
+    );
   }
 
   return res.json();
@@ -104,10 +157,7 @@ export const setDefaultPolicy = (payload: PolicyUpdatePayload) =>
     body: JSON.stringify(payload),
   });
 
-export const setAgentPolicy = (
-  agentName: string,
-  payload: PolicyUpdatePayload
-) =>
+export const setAgentPolicy = (agentName: string, payload: PolicyUpdatePayload) =>
   request<Policy>(`/policies/${encodeURIComponent(agentName)}`, {
     method: "PUT",
     body: JSON.stringify(payload),
@@ -117,6 +167,23 @@ export const deleteAgentPolicy = (agentName: string) =>
   request(`/policies/${encodeURIComponent(agentName)}`, {
     method: "DELETE",
   });
+
+export const getRealtimeToken = () =>
+  request<RealtimeToken>(`/organizations/me/realtime-token`, { method: "POST" });
+
+export const listAlertChannels = () => request<AlertChannel[]>(`/alert-channels`);
+
+export const createAlertChannel = (payload: AlertChannelPayload) =>
+  request<AlertChannel>(`/alert-channels`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const testAlertChannel = (id: number) =>
+  request<{ status: string }>(`/alert-channels/${id}/test`, { method: "POST" });
+
+export const deleteAlertChannel = (id: number) =>
+  request(`/alert-channels/${id}`, { method: "DELETE" });
 
 export async function createOrganization(name: string): Promise<OrganizationCreated> {
   const res = await fetch(`${API_URL}/organizations`, {

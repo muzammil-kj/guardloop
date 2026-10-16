@@ -125,5 +125,9 @@ Want to start with Phase 1 (auth + multi-tenancy) right now, same file-by-file b
 4. **Realtime + alerts** — Supabase Realtime on the dashboard (no more manual refresh), Slack/Discord alerts when the escalation queue backs up or a budget is breached
 5. **Judge/anomaly detection** — a secondary LLM re-checks a sample of "approved" events to catch cases where the agent was confidently wrong, the most technically interesting phase
 6. **Tests + CI/CD + Docker** — GitHub Actions running your test suite on every PR, docker-compose for local dev, genuinely locked down and production-grade rather than just working
-
-Each one is independently demoable, so after every phase you have something real to show, not a half-finished rewrite. Want to start Phase 2 now?
+Changes worth knowing
+Row-level security is now on for every table. Phase 4 puts a public key in the browser, so any table left open could be readable with it. Your backend uses the secret key, which bypasses this, so the API is unaffected.
+Webhook URLs are checked. Only real discord.com and hooks.slack.com addresses are accepted, because your server POSTs to whatever URL is saved. The full URL is never sent back to the browser; you only see discord.com/...oken.
+Alert debounce is per channel. My first design would have let a Discord alert silence the Slack one.
+The dashboard falls back to polling. If Realtime can’t connect, the badge reads “Refreshing every 15s” and the dashboard still updates.
+The new secrets are optional. If they’re missing, only those two features say “not configured” and the rest of the API stays up

@@ -1,5 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field, model_validator
+
+from app.alerts.dispatcher import validate_webhook_url
 
 
 class IngestEvent(BaseModel):
@@ -59,3 +62,25 @@ class PolicyInfo(BaseModel):
     confidence_threshold: float
     hard_escalate_event_types: list[str]
     updated_at: str
+
+
+class AlertChannelCreate(BaseModel):
+    channel_type: Literal["discord", "slack"]
+    webhook_url: str
+    queue_depth_threshold: int = Field(default=10, ge=1, le=10_000)
+    daily_budget_usd: float = Field(default=5.0, gt=0, le=1_000_000)
+
+    @model_validator(mode="after")
+    def webhook_must_match_provider(self):
+        validate_webhook_url(self.channel_type, self.webhook_url)
+        return self
+
+
+class AlertChannelInfo(BaseModel):
+    id: int
+    channel_type: str
+    webhook_hint: str  # masked; the full webhook URL is never returned
+    queue_depth_threshold: int
+    daily_budget_usd: float
+    enabled: bool
+    created_at: str

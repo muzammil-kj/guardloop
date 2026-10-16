@@ -21,6 +21,30 @@ import {
   Escalation,
   AgentCost,
 } from "@/lib/api";
+import { useLiveUpdates, type LiveStatus } from "@/lib/useLiveUpdates";
+
+function LiveBadge({ status }: { status: LiveStatus }) {
+  const styles = {
+    live: { dot: "bg-emerald-400", text: "text-emerald-400", label: "Live" },
+    polling: {
+      dot: "bg-amber-400",
+      text: "text-amber-400",
+      label: "Refreshing every 15s",
+    },
+    connecting: { dot: "bg-slate-500", text: "text-slate-400", label: "Connecting" },
+  }[status];
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-normal ${styles.text}`}>
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${styles.dot} ${
+          status === "live" ? "animate-pulse" : ""
+        }`}
+      />
+      {styles.label}
+    </span>
+  );
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -29,6 +53,7 @@ export default function DashboardPage() {
   const [costs, setCosts] = useState<AgentCost[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
+  const liveStatus = useLiveUpdates(loadData);
 
   useEffect(() => {
     if (!window.localStorage.getItem("guardloop_api_key")) {
@@ -48,6 +73,7 @@ export default function DashboardPage() {
       setEvents(e);
       setEscalations(esc);
       setCosts(c);
+      setErrorMsg("");
     } catch {
       setErrorMsg(
         "Could not reach the Guardloop API. Check that NEXT_PUBLIC_API_URL points to a running backend."
@@ -83,7 +109,10 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-slate-950 text-slate-100 px-8 py-8">
       <header className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-50">Guardloop</h1>
+          <h1 className="text-xl font-semibold text-slate-50 flex items-center gap-3">
+            Guardloop
+            <LiveBadge status={liveStatus} />
+          </h1>
           <p className="text-sm text-slate-400 mt-1">
             Live view of every agent decision, what got escalated, and what it's costing you.
           </p>
