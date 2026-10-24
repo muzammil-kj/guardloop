@@ -128,3 +128,13 @@ def test_a_failed_send_is_not_recorded_so_it_retries_next_run(
         except RuntimeError:
             pass
     assert history.upserted is None
+
+
+def test_the_message_uses_correct_grammar_for_one_escalation(make_fake_supabase, fake_query):
+    fake, _ = build(make_fake_supabase, fake_query, depth=1)
+    with patch("app.alerts.checker.send_alert") as send:
+        run_checks_for_channel(fake, channel(queue_depth_threshold=1))
+
+    message = send.call_args.args[2]
+    assert "1 escalation is waiting" in message
+    assert "escalations" not in message

@@ -54,8 +54,9 @@ def check_queue_depth(supabase, channel: dict) -> None:
         send_alert(
             channel["channel_type"],
             channel["webhook_url"],
-            f"Guardloop alert: {depth} escalations are waiting for human review "
-            f"(your threshold is {threshold}).",
+            f"Guardloop alert: {depth} "
+            f"{'escalation is' if depth == 1 else 'escalations are'} "
+            f"waiting for human review (your threshold is {threshold}).",
         )
         _record_trigger(supabase, channel["id"], rule_type)
 

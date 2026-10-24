@@ -15,7 +15,7 @@ import {
   Policy,
   AlertChannel,
 } from "@/lib/api";
-
+import JudgeSettings from "../_components/JudgeSettings";
 function PolicyEditor({
   title,
   description,
@@ -423,6 +423,7 @@ export default function SettingsPage() {
       </section>
 
       <AlertChannelsSection />
+      <JudgeSettings />
     </main>
   );
 }

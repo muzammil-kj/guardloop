@@ -6,19 +6,19 @@ from fastapi import APIRouter, Header, HTTPException
 from app.alerts.checker import run_checks_for_channel
 from app.config import settings
 from app.db.supabase_client import get_supabase
+from app.judge.reviewer import review_pending
 
 logger = logging.getLogger("guardloop.alerts")
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
+# One cron pass reviews at most this many events, within this many seconds,
+# so a request never outlives the cron service's own timeout.
+JUDGE_PASS_LIMIT = 20
+JUDGE_PASS_TIME_BUDGET_SECONDS = 40
 
-@router.post("/run-checks")
-async def run_checks(x_internal_secret: str | None = Header(default=None)):
-    """
-    Called by an external scheduler (a free cron service) every few minutes.
-    An in-process scheduler would silently stop whenever Render's free tier
-    puts the service to sleep; an external ping also wakes it back up.
-    """
+
+def _authorize(x_internal_secret: str | None) -> None:
     configured = settings.internal_cron_secret
     if not configured:
         raise HTTPException(
@@ -31,6 +31,16 @@ async def run_checks(x_internal_secret: str | None = Header(default=None)):
         x_internal_secret.encode(), configured.encode()
     ):
         raise HTTPException(status_code=401, detail="Invalid internal secret.")
+
+
+@router.post("/run-checks")
+async def run_checks(x_internal_secret: str | None = Header(default=None)):
+    """
+    Called by an external scheduler (a free cron service) every few minutes.
+    An in-process scheduler would silently stop whenever Render's free tier
+    puts the service to sleep; an external ping also wakes it back up.
+    """
+    _authorize(x_internal_secret)
 
     supabase = get_supabase()
     channels = (
@@ -51,3 +61,23 @@ async def run_checks(x_internal_secret: str | None = Header(default=None)):
             )
 
     return {"channels_checked": checked, "channels_failed": failed}
+
+
+@router.post("/run-judge")
+def run_judge(x_internal_secret: str | None = Header(default=None)):
+    """Scheduled judge pass across every organization. Plain `def` because it
+    makes slow model calls; FastAPI runs it in a thread pool."""
+    _authorize(x_internal_secret)
+
+    if not settings.gemini_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="The judge is not configured (GEMINI_API_KEY is unset).",
+        )
+
+    return review_pending(
+        get_supabase(),
+        organization_id=None,
+        limit=JUDGE_PASS_LIMIT,
+        time_budget_seconds=JUDGE_PASS_TIME_BUDGET_SECONDS,
+    )

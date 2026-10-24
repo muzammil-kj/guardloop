@@ -131,3 +131,15 @@ Webhook URLs are checked. Only real discord.com and hooks.slack.com addresses ar
 Alert debounce is per channel. My first design would have let a Discord alert silence the Slack one.
 The dashboard falls back to polling. If Realtime can’t connect, the badge reads “Refreshing every 15s” and the dashboard still updates.
 The new secrets are optional. If they’re missing, only those two features say “not configured” and the rest of the API stays up
+
+
+What Phase 5 does
+
+Until now Guardloop trusted an agent’s own confidence: 0.95 meant approved. But an agent can be confidently wrong. Phase 5 adds a second model that re-checks a random sample of those auto-approved decisions. It is never shown the agent’s confidence, so it can’t be swayed by it.
+
+If the second model disagrees, the decision is added to your normal human review queue.
+The dashboard shows, per agent, how often the judge disagreed. An agent with at least 5 reviews and 20% or more disagreement is marked “looks overconfident”.
+It is off by default. Each organization turns it on and picks what share of events to review.
+It only samples events that were auto-approved and have an input or output summary. Escalated events are skipped because a human is already looking at them.
+The agent’s event keeps its original “approved” status, which is what happened at the time. The judge’s verdict is shown separately.
+If the judge or its database table is unavailable, ingestion still works. The judge can’t break your agents’ calls.

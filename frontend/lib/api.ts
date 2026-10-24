@@ -104,7 +104,7 @@ function getStoredApiKey(): string | null {
   return window.localStorage.getItem("guardloop_api_key");
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const apiKey = getStoredApiKey();
   const res = await fetch(`${API_URL}${path}`, {
     headers: {

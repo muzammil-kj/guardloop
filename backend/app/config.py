@@ -20,5 +20,10 @@ class Settings(BaseSettings):
     # endpoint refuses every request (503) instead of accepting an empty secret.
     internal_cron_secret: str = ""
 
+    # Phase 5, the LLM judge. Optional: with no key the judge simply stays
+    # unavailable ("not configured") and nothing else is affected.
+    gemini_api_key: str = ""
+    judge_model: str = "gemini-3.5-flash-lite"
+
 
 settings = Settings()

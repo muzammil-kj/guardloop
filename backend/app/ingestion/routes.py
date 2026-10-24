@@ -4,6 +4,7 @@ from datetime import date
 from app.db.supabase_client import get_supabase
 from app.models import IngestEvent
 from app.policies.evaluator import should_escalate
+from app.judge.sampling import decide_judge_sampling
 from app.auth.dependencies import get_current_org
 
 router = APIRouter(tags=["ingestion"])
@@ -23,7 +24,17 @@ async def ingest_event(event: IngestEvent, org: dict = Depends(get_current_org))
     reason = event.escalate_reason or reason
     status = "escalated" if escalate else "approved"
 
-    event_row = supabase.table("agent_events").insert({
+    # Auto-approved events may be queued for a second opinion from the judge.
+    # Escalated events aren't: a human is already looking at those.
+    has_content = bool(
+        (event.input_summary or "").strip() or (event.output_summary or "").strip()
+    )
+    judge_sampled = (
+        not escalate
+        and decide_judge_sampling(supabase, org["id"], has_content)
+    )
+
+    event_payload = {
         "organization_id": org["id"],
         "agent_name": event.agent_name,
         "event_type": event.event_type,
@@ -32,7 +43,11 @@ async def ingest_event(event: IngestEvent, org: dict = Depends(get_current_org))
         "confidence": event.confidence,
         "status": status,
         "cost_usd": event.cost_usd,
-    }).execute()
+    }
+    if judge_sampled:
+        event_payload["judge_status"] = "pending"
+
+    event_row = supabase.table("agent_events").insert(event_payload).execute()
 
     event_id = event_row.data[0]["id"]
 

@@ -22,6 +22,7 @@ import {
   AgentCost,
 } from "@/lib/api";
 import { useLiveUpdates, type LiveStatus } from "@/lib/useLiveUpdates";
+import JudgePanel from "./_components/JudgePanel";
 
 function LiveBadge({ status }: { status: LiveStatus }) {
   const styles = {
@@ -252,6 +253,7 @@ export default function DashboardPage() {
           </table>
         </div>
       </section>
+      <JudgePanel refreshKey={events} />
     </main>
   );
 }

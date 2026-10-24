@@ -84,3 +84,14 @@ class AlertChannelInfo(BaseModel):
     daily_budget_usd: float
     enabled: bool
     created_at: str
+
+
+class JudgeSettingsUpdate(BaseModel):
+    enabled: bool
+    sample_rate: float = Field(ge=0.0, le=1.0)
+
+
+class JudgeSettingsInfo(BaseModel):
+    enabled: bool
+    sample_rate: float
+    judge_configured: bool  # whether the server has a GEMINI_API_KEY
