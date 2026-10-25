@@ -226,15 +226,24 @@ docker-compose.yml
 
 ---
 
+
 ## Screenshots
 
-To add once captured (save them in `docs/screenshots/`):
+### Live Dashboard
+![Guardloop live dashboard](docs/screenshots/dashboard-live.png)
 
-1. `dashboard-live.png`: the live dashboard with the Live badge and pending escalations
-2. `policy-settings.png`: the default threshold and an agent override
-3. `alerts-discord.png`: a real threshold alert in Discord
-4. `judge-panel.png`: the judge panel with per-agent calibration
-5. `ci-green.png`: the CI run with all four checks passing
+### Policy Settings
+![Guardloop policy settings](docs/screenshots/policy-settings.png)
+
+### Discord Alerts
+![Guardloop Discord alert](docs/screenshots/alerts-discord.png)
+
+### Judge Review Panel
+![Guardloop judge panel](docs/screenshots/judge-panel.png)
+
+### CI Checks
+![Guardloop CI checks passing](docs/screenshots/ci-green.png)
+
 
 ---
 
