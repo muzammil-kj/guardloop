@@ -1,6 +1,6 @@
 # guardloop-sdk
 
-Python client for [Guardloop](https://github.com/your-username/guardloop), a
+Python client for [Guardloop](https://github.com/muzammil-kj/guardloop), a
 guardrail and observability layer for AI agents.
 
 ## Install
@@ -9,7 +9,7 @@ guardrail and observability layer for AI agents.
 pip install guardloop-sdk
 ```
 
-(During development, before publishing to PyPI: `pip install -e .` from this folder.)
+Requires Python 3.9 or newer.
 
 ## Usage
 

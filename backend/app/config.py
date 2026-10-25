@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # endpoint refuses every request (503) instead of accepting an empty secret.
     internal_cron_secret: str = ""
 
+    # Browser origins allowed to call the API: comma-separated. The default is
+    # the production dashboard plus local development. Add a Vercel preview URL
+    # here only when you need to test against it.
+    cors_allowed_origins: str = "https://guardloop-iota.vercel.app,http://localhost:3000"
+
     # Phase 5, the LLM judge. Optional: with no key the judge simply stays
     # unavailable ("not configured") and nothing else is affected.
     gemini_api_key: str = ""

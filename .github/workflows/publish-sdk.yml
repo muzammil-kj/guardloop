@@ -1,0 +1,51 @@
+name: Publish SDK
+
+# Publishes to PyPI when a tag like sdk-v0.1.0 is pushed.
+# Uses PyPI "trusted publishing": GitHub proves who it is with a short-lived
+# token, so no PyPI password or API token is stored anywhere in this repo.
+on:
+  push:
+    tags:
+      - "sdk-v*"
+
+jobs:
+  publish:
+    name: test, build and publish
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # needed for trusted publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Refuse to publish if the tag and the package version disagree
+        working-directory: sdk
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "sdk-v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match pyproject.toml version ${VERSION}."
+            echo "Bump the version in sdk/pyproject.toml and sdk/guardloop_sdk/__init__.py first."
+            exit 1
+          fi
+
+      - name: Run the SDK tests
+        working-directory: sdk
+        run: |
+          pip install -e . pytest
+          python -m pytest tests/ -q
+
+      - name: Build and check the distribution
+        working-directory: sdk
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk/dist/
