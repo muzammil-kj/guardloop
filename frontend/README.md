@@ -143,3 +143,16 @@ It is off by default. Each organization turns it on and picks what share of even
 It only samples events that were auto-approved and have an input or output summary. Escalated events are skipped because a human is already looking at them.
 The agent’s event keeps its original “approved” status, which is what happened at the time. The judge’s verdict is shown separately.
 If the judge or its database table is unavailable, ingestion still works. The judge can’t break your agents’ calls.
+
+
+Limits to know about
+The judge only sees the summaries your agent sends. Vague summaries mean “unsure” verdicts.
+It is another LLM’s opinion, not ground truth, and it can be wrong. Fencing the data, strict parsing, and hiding the agent’s confidence reduce manipulation, but don’t eliminate it.
+Reviewed events’ summaries are sent to Google’s Gemini API. The settings page says so.
+Each manual click reviews at most 5 events, and each cron pass at most 20. There’s no overall spend cap yet. Google’s rate limits are handled by pausing and retrying later.
+
+What Phase 6 does
+CI (GitHub Actions): every push and every pull request runs four checks: the backend tests, a Docker build that starts the container and waits for /health, the SDK tests, and the frontend production build. If any check fails, you see it on the commit.
+Docker: the backend image uses Python 3.12, the same version Render installs with, and runs as a non-root user. The .dockerignore keeps .env out of the image, so secrets are never baked in.
+docker-compose: runs the backend and the frontend dev server together on your PC with one command.
+Deploy gating: Render waits for CI to pass before deploying. Branch protection stops anyone merging to main on a red build.

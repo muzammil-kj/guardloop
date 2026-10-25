@@ -1,27 +1,36 @@
 # Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Python virtual environments
+.venv/
+.venv_*/
 backend/.venv/
-backend/__pycache__/
-backend/*.pyc
+
+# Python testing and cache
+.pytest_cache/
 
 # Backend secrets
 backend/.env
 
-# Next.js
+# General environment secrets
+.env
+.env.local
+
+# Next.js and Node.js
+node_modules/
+.next/
 frontend/node_modules/
 frontend/.next/
 
 # Frontend secrets
 frontend/.env.local
 
+# Build outputs
+dist/
+
 # OS/editor files
 .DS_Store
 Thumbs.db
 .vscode/
-
-# Python cache files
-__pycache__/
-*.py[cod]
-.pytest_cache/
-
-
-*.egg-info/
