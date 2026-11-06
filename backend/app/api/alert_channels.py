@@ -1,8 +1,10 @@
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.alerts.dispatcher import AlertDeliveryError, mask_webhook_url, send_alert
 from app.auth.dependencies import get_current_org
 from app.db.supabase_client import get_supabase
+from app.audit import record_audit
 from app.models import AlertChannelCreate, AlertChannelInfo
 
 router = APIRouter(prefix="/alert-channels", tags=["alert-channels"])
@@ -50,6 +52,13 @@ async def create_channel(
         })
         .execute()
     )
+
+    record_audit(
+        supabase, org, "alert_channel.added", "alert_channel",
+        result.data[0]["id"],
+        {"channel_type": payload.channel_type}
+    )
+
     return _to_info(result.data[0])
 
 
@@ -92,4 +101,7 @@ async def delete_channel(channel_id: int, org: dict = Depends(get_current_org)):
     )
     if not result.data:
         raise HTTPException(status_code=404, detail="Alert channel not found.")
+
+    record_audit(supabase, org, "alert_channel.removed", "alert_channel", channel_id)
+
     return {"status": "deleted"}

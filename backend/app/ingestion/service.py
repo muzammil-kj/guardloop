@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from app.judge.sampling import decide_judge_sampling
 from app.models import IngestEvent
@@ -53,6 +53,32 @@ def _insert_event(supabase, organization_id, event, input_text, output_text,
     return supabase.table("agent_events").insert(payload).execute().data[0]["id"]
 
 
+def _pause_notice(supabase, organization_id, agent_name, event_id, budget) -> None:
+    """One pending review per agent per day, so a runaway loop can't flood the queue."""
+    start_of_day = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    blocks_today = (
+        supabase.table("agent_events").select("id")
+        .eq("organization_id", organization_id)
+        .eq("agent_name", agent_name)
+        .eq("status", "blocked")
+        .gte("created_at", start_of_day)
+        .execute().data
+    )
+    if len(blocks_today) != 1:
+        return  # not the first block today: a notice already exists
+    supabase.table("escalations").insert({
+        "organization_id": organization_id,
+        "event_id": event_id,
+        "source": "budget",
+        "reason": (
+            f"Agent '{agent_name}' is paused: daily budget of ${budget['daily_budget_usd']:.2f} "
+            f"reached (spent ${budget['spent_today_usd']:.2f}). It stays paused until the budget "
+            "resets or is raised."
+        ),
+        "status": "pending",
+    }).execute()
+
+
 def process_event(supabase, org: dict, event: IngestEvent) -> dict:
     """The full ingest decision. Returns the response body; the route picks the status code."""
     organization_id = org["id"]
@@ -69,6 +95,7 @@ def process_event(supabase, org: dict, event: IngestEvent) -> dict:
     if not budget["allowed"]:
         event_id = _insert_event(supabase, organization_id, event, input_text, output_text,
                                  "blocked", pii_redacted, 0.0, judge_pending=False)
+        _pause_notice(supabase, organization_id, event.agent_name, event_id, budget)
         return {
             "event_id": event_id,
             "status": "blocked",

@@ -1,3 +1,4 @@
+
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -5,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.dependencies import get_current_org
+from app.auth.actors import get_actor
 from app.main import app
 
 ORG = {"id": "org-1"}
@@ -17,6 +19,7 @@ def key(value="k"):
 @pytest.fixture
 def client():
     app.dependency_overrides[get_current_org] = lambda: ORG
+    app.dependency_overrides[get_actor] = lambda: ORG
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -111,8 +114,15 @@ def test_manual_run_is_503_when_no_model_key_is_configured(client):
 
 
 def test_manual_run_reviews_only_the_callers_org_with_a_small_cap(client):
-    stats = {"reviewed": 2, "flagged": 1, "skipped": 0, "failed": 0,
-             "retry_later": 0, "deferred": 0, "rate_limited": False}
+    stats = {
+        "reviewed": 2,
+        "flagged": 1,
+        "skipped": 0,
+        "failed": 0,
+        "retry_later": 0,
+        "deferred": 0,
+        "rate_limited": False,
+    }
     with key(), patch("app.api.judge.get_supabase"), patch(
         "app.api.judge.review_pending", return_value=stats
     ) as run:

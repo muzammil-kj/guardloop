@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-
+from app.audit import record_audit
 from app.db.supabase_client import get_supabase
 from app.auth.dependencies import get_current_org
 from app.models import PolicyUpdate, PolicyInfo
@@ -52,6 +52,13 @@ async def set_default_policy(payload: PolicyUpdate, org: dict = Depends(get_curr
     else:
         result = supabase.table("agent_policies").insert(row).execute()
 
+    record_audit(
+        get_supabase(), org, "policy.default_set", "policy", None, {
+            "confidence_threshold": payload.confidence_threshold,
+            "hard_escalate_event_types": payload.hard_escalate_event_types,
+        }
+    )
+
     return result.data[0]
 
 
@@ -88,6 +95,13 @@ async def set_agent_policy(
     else:
         result = supabase.table("agent_policies").insert(row).execute()
 
+    record_audit(
+        get_supabase(), org, "policy.agent_set", "policy", agent_name, {
+            "confidence_threshold": payload.confidence_threshold,
+            "hard_escalate_event_types": payload.hard_escalate_event_types,
+        }
+    )
+
     return result.data[0]
 
 
@@ -105,4 +119,6 @@ async def delete_agent_policy(agent_name: str, org: dict = Depends(get_current_o
     )
     if not result.data:
         raise HTTPException(status_code=404, detail="No policy found for this agent.")
+
+    record_audit(get_supabase(), org, "policy.agent_removed", "policy", agent_name)
     return {"status": "deleted"}

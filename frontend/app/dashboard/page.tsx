@@ -125,6 +125,12 @@ export default function DashboardPage() {
           >
             Policy settings
           </Link>
+          <Link href="/review" className="text-sm text-slate-400 hover:text-slate-200 border border-slate-800 rounded-md px-3 py-1.5">
+            Review queue
+          </Link>
+          <Link href="/audit" className="text-sm text-slate-400 hover:text-slate-200 border border-slate-800 rounded-md px-3 py-1.5">
+            Audit log
+          </Link>
           <button
             onClick={() => {
               window.localStorage.removeItem("guardloop_api_key");

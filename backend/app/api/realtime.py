@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth.dependencies import get_current_org
+from app.auth.actors import get_actor
 from app.realtime.token import mint_realtime_token, RealtimeNotConfigured
 
 router = APIRouter(prefix="/organizations/me", tags=["realtime"])
 
 
 @router.post("/realtime-token")
-async def get_realtime_token(org: dict = Depends(get_current_org)):
+async def get_realtime_token(org: dict = Depends(get_actor)):
     """
     Exchanges a valid Guardloop API key for a short-lived Supabase Realtime
     token scoped to this organization, so the dashboard can receive live

@@ -1,3 +1,4 @@
+
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -6,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.dependencies import get_current_org
+from app.auth.actors import get_actor
 from app.main import app
 from app.realtime.token import RealtimeNotConfigured, mint_realtime_token
 
@@ -49,6 +51,7 @@ def test_minting_without_a_secret_raises():
 
 def test_endpoint_returns_a_token_for_the_callers_org():
     app.dependency_overrides[get_current_org] = lambda: {"id": "org-abc"}
+    app.dependency_overrides[get_actor] = lambda: {"id": "org-abc"}
     try:
         with with_secret(SECRET):
             response = TestClient(app).post("/organizations/me/realtime-token")
@@ -65,6 +68,7 @@ def test_endpoint_returns_a_token_for_the_callers_org():
 
 def test_endpoint_returns_503_when_realtime_is_not_configured():
     app.dependency_overrides[get_current_org] = lambda: {"id": "org-abc"}
+    app.dependency_overrides[get_actor] = lambda: {"id": "org-abc"}
     try:
         with with_secret(""):
             response = TestClient(app).post("/organizations/me/realtime-token")
