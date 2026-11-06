@@ -1,87 +1,61 @@
-from fastapi import APIRouter, Depends
-from datetime import date
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
-from app.db.supabase_client import get_supabase
-from app.models import IngestEvent
-from app.policies.evaluator import should_escalate
-from app.judge.sampling import decide_judge_sampling
 from app.auth.dependencies import get_current_org
+from app.db.supabase_client import get_supabase
+from app.ingestion.idempotency import (
+    MAX_KEY_LENGTH,
+    IdempotencyConflict,
+    claim,
+    complete,
+    release,
+)
+from app.ingestion.service import process_event
+from app.models import IngestEvent
 
 router = APIRouter(tags=["ingestion"])
 
 
 @router.post("/ingest")
-async def ingest_event(event: IngestEvent, org: dict = Depends(get_current_org)):
+async def ingest_event(
+    event: IngestEvent,
+    response: Response,
+    org: dict = Depends(get_current_org),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """
+    Report one agent decision. Send an Idempotency-Key header (for example the
+    n8n execution or message id) so a retried call is never recorded twice.
+    Returns 200 normally, 429 when the agent is over its daily budget, and
+    409 when an identical request is still being processed.
+    """
     supabase = get_supabase()
-    escalate, reason = should_escalate(
-        supabase,
-        org["id"],
-        event.agent_name,
-        event.event_type,
-        event.confidence,
-        event.force_escalate,
-    )
-    reason = event.escalate_reason or reason
-    status = "escalated" if escalate else "approved"
 
-    # Auto-approved events may be queued for a second opinion from the judge.
-    # Escalated events aren't: a human is already looking at those.
-    has_content = bool(
-        (event.input_summary or "").strip() or (event.output_summary or "").strip()
-    )
-    judge_sampled = (
-        not escalate
-        and decide_judge_sampling(supabase, org["id"], has_content)
-    )
+    key = None
+    if idempotency_key is not None:
+        key = idempotency_key.strip()
+        if not key or len(key) > MAX_KEY_LENGTH:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Idempotency-Key must be 1 to {MAX_KEY_LENGTH} characters.",
+            )
+        try:
+            owned, stored = claim(supabase, org["id"], key)
+        except IdempotencyConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        if not owned:
+            response.headers["Idempotent-Replayed"] = "true"
+            response.status_code = 429 if stored.get("status") == "blocked" else 200
+            return stored
 
-    event_payload = {
-        "organization_id": org["id"],
-        "agent_name": event.agent_name,
-        "event_type": event.event_type,
-        "input_summary": event.input_summary,
-        "output_summary": event.output_summary,
-        "confidence": event.confidence,
-        "status": status,
-        "cost_usd": event.cost_usd,
-    }
-    if judge_sampled:
-        event_payload["judge_status"] = "pending"
+    try:
+        result = process_event(supabase, org, event)
+    except Exception:
+        if key is not None:
+            release(supabase, org["id"], key)
+        raise
 
-    event_row = supabase.table("agent_events").insert(event_payload).execute()
+    if key is not None:
+        complete(supabase, org["id"], key, result["event_id"], result)
 
-    event_id = event_row.data[0]["id"]
-
-    if escalate:
-        supabase.table("escalations").insert({
-            "organization_id": org["id"],
-            "event_id": event_id,
-            "reason": reason,
-            "status": "pending",
-        }).execute()
-
-    today = str(date.today())
-    existing = (
-        supabase.table("agent_costs")
-        .select("*")
-        .eq("organization_id", org["id"])
-        .eq("agent_name", event.agent_name)
-        .eq("date", today)
-        .execute()
-    )
-
-    if existing.data:
-        row = existing.data[0]
-        supabase.table("agent_costs").update({
-            "total_cost_usd": row["total_cost_usd"] + event.cost_usd,
-            "event_count": row["event_count"] + 1,
-        }).eq("id", row["id"]).execute()
-    else:
-        supabase.table("agent_costs").insert({
-            "organization_id": org["id"],
-            "agent_name": event.agent_name,
-            "date": today,
-            "total_cost_usd": event.cost_usd,
-            "event_count": 1,
-        }).execute()
-
-    return {"event_id": event_id, "status": status, "reason": reason}
+    response.status_code = 429 if result["status"] == "blocked" else 200
+    return result
