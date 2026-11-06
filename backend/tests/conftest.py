@@ -57,6 +57,12 @@ class FakeQuery:
     def lt(self, *args, **kwargs):
         return self
 
+    def gte(self, *args, **kwargs):
+        return self
+
+    def in_(self, *args, **kwargs):
+        return self
+        
     def is_(self, *args, **kwargs):
         return self
 

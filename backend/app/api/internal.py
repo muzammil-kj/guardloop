@@ -1,9 +1,11 @@
+
 import logging
 import secrets
 
 from fastapi import APIRouter, Header, HTTPException
 
 from app.alerts.checker import run_checks_for_channel
+from app.alerts.sla import check_overdue
 from app.config import settings
 from app.db.supabase_client import get_supabase
 from app.judge.reviewer import review_pending
@@ -59,6 +61,11 @@ async def run_checks(x_internal_secret: str | None = Header(default=None)):
             logger.warning(
                 "Alert check failed for channel %s: %s", channel.get("id"), exc
             )
+
+    try:
+        check_overdue(supabase)
+    except Exception as exc:
+        logger.warning("Deadline check failed: %s", type(exc).__name__)
 
     return {"channels_checked": checked, "channels_failed": failed}
 

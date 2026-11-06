@@ -30,7 +30,13 @@ AI agents are often confidently wrong, and a team running several of them has no
 | **Live dashboard** | Events and escalations update through Supabase Realtime, with a 15-second polling fallback if Realtime is unavailable. |
 | **Alerts** | Discord or Slack messages when the review queue reaches a threshold or daily spend reaches a budget. Each rule waits an hour before alerting again on the same channel. |
 | **LLM judge** | A second model re-checks a sample of auto-approved decisions. It never sees the agent's own confidence. When it disagrees, the decision goes to the review queue. Each agent gets a calibration view that flags agents whose confidence doesn't match the judge. |
-| **Quality gates** | 137 backend tests, 6 SDK tests, a frontend production build, and a Docker smoke test run on every push. Deploys wait for green checks. |
+| **Idempotent retries** | Send an `Idempotency-Key` with each report. A retried call returns the first result and never creates a duplicate event. |
+| **Daily spend caps** | A budget per agent, set through the API. An agent over budget gets a `429` and must stop; the block is recorded for audit. |
+| **Privacy masking** | Emails, card numbers, phone numbers and national ID numbers are masked before anything is stored or sent to the judge. |
+| **Reviewer accounts** | Team members sign in with Supabase Auth. Roles: owner, reviewer, viewer. Reviews are recorded under the reviewer's name. |
+| **Assignments and deadlines** | Each escalation has an owner and a deadline from the organization's SLA. Overdue reviews alert the organization's channels once. |
+| **Audit log and exports** | Every review, assignment, membership, policy, budget, key and channel change is recorded and can be exported as CSV. |
+| **Quality gates** | 219 backend tests, 13 SDK tests, a frontend production build, and a Docker smoke test run on every push. Deploys wait for green checks. |
 
 ---
 
@@ -142,7 +148,17 @@ Every route below except `/health`, `POST /organizations`, and the two `/interna
 | POST | `/organizations/me/api-keys` | Create a key (returned once) |
 | DELETE | `/organizations/me/api-keys/{key_id}` | Revoke a key |
 | POST | `/organizations/me/realtime-token` | Short-lived token for live dashboard updates |
-| POST | `/ingest` | Report an agent decision |
+| POST | `/ingest` | Report an agent decision. Optional `Idempotency-Key` header. Returns 429 when blocked by budget. |
+| GET | `/agents/{agent_name}/permission` | Ask before acting: is this agent within its budget? |
+| PUT | `/agents/{agent_name}/budget` | Set or remove an agent's daily spend cap |
+| GET | `/me` | Who is signed in, and their role |
+| GET | `/members` | List organization members |
+| POST | `/members` | Invite a member by email (owner) |
+| DELETE | `/members/{membership_id}` | Remove a member (owner) |
+| PATCH | `/escalations/{escalation_id}/assign` | Assign a review to a member |
+| GET | `/audit` | Recent audit entries (owner) |
+| GET | `/exports/decisions.csv` | Download decisions as CSV |
+| GET | `/exports/audit.csv` | Download the audit log as CSV (owner) |
 | GET | `/events` | Recent events |
 | GET | `/escalations` | Escalations, filter by `status` |
 | PATCH | `/escalations/{escalation_id}/resolve` | Approve, reject, or correct an escalation |
@@ -174,14 +190,18 @@ Every route below except `/health`, `POST /organizations`, and the two `/interna
 - **Webhook safety.** Webhook URLs must be HTTPS and must point at Discord or Slack. Redirects are disabled, and the full URL is never returned by the API. This stops the server being used to reach internal addresses.
 - **Scheduled endpoints** require a shared secret compared in constant time. They refuse every request if no secret is configured.
 - **Judge hardening.** The agent's own confidence is hidden from the judge. Event text is wrapped in delimiters that the text can't close. Verdicts are parsed strictly, so anything malformed is an error and never counts as "agree". The model key travels in a header, not the URL.
+- **Roles.** Reviewers sign in with Supabase Auth. Supabase verifies their token on every request, and the role limits what they can do: viewers read, reviewers resolve and assign, owners manage members and the audit log. Settings and keys remain API-key only.
+- **Audit trail.** Reviews, assignments, membership, policy, budget, key and channel changes are recorded with who made them.
+- **CSV safety.** Cells beginning with `=`, `+`, `-` or `@` are prefixed with an apostrophe, so opening an export in a spreadsheet can't run a formula.
 - **Fail-open ingestion.** A broken judge or missing judge table never stops an agent's call from being recorded.
+- **Masking before storage.** Personal data is masked before it reaches the database, escalations, or the judge. Masking is pattern-based and best-effort, so it reduces exposure rather than eliminating it.
 
 ---
 
 ## Testing and CI
 
-- **Backend:** 137 tests with mocked network calls. They cover auth, policy resolution, escalation rules, webhook validation, alert debounce, the judge's prompt construction, verdict parsing, the review loop, CORS, and the HTTP routes.
-- **SDK:** 6 tests.
+- **Backend:** 219 tests with mocked network calls. They cover auth, policy resolution, escalation rules, webhook validation, alert debounce, the judge's prompt construction, verdict parsing, the review loop, CORS, and the HTTP routes.
+- **SDK:** 13 tests.
 - **Frontend:** a production build, which also type-checks every page.
 - **Docker:** the backend image is built and started, and `/health` must respond.
 
@@ -196,10 +216,16 @@ Deploys on Render wait for CI to pass. `main` is protected, so changes arrive th
 - **The judge is another LLM.** Its disagreement is a signal to look at, not ground truth. Its accuracy has not been measured against human labels yet.
 - **Judge data leaves your infrastructure.** For each reviewed event, the agent name, event type, and input and output summaries are sent to Google's Gemini API. Enable it only when that is allowed. The settings page says so.
 - **Judge spend has no global cap.** Limits are per run (5 for a manual run, 20 per scheduled pass), not per day.
-- **No user accounts yet.** Access is by organization API key. The dashboard keeps that key in the browser's local storage, which is convenient for a demo but is not a production login.
+- **Audit writes are best-effort.** A failed audit write is logged and doesn't block the action. Compliance customers will need a stricter mode.
+- **Reviewer sessions last about an hour.** After that, reviewers sign in again.
+- **Admin settings need the API key.** Reviewers can't change policies, budgets, alert channels or keys.
+- **Assignments don't notify the assignee yet.** Deadline alerts go to the organization's channels.
 - **No rate limiting** on `/ingest` yet.
 - **Free hosting.** Render sleeps when idle. The five-minute scheduled job keeps the service awake but isn't a guarantee of uptime.
 - **Scheduling depends on an external service** (cron-job.org).
+- **Spend caps only stop agents that ask first.** Guardloop can't interrupt an agent that never calls `/permission` or the SDK's `can_act`.
+- **Budgets are set through the API only.** The dashboard doesn't have a budget editor yet.
+- **Masking is best-effort.** It catches common formats (emails, card numbers that pass the Luhn check, phone numbers, Pakistani CNIC, US SSN). Names, addresses and free-text personal details are not detected.
 - **Alert timing is fixed** at one hour per channel and rule, and the calibration flag (at least 5 reviews and a 20% disagreement rate) is set in code.
 
 ---
@@ -207,7 +233,6 @@ Deploys on Render wait for CI to pass. `main` is protected, so changes arrive th
 ## Roadmap
 
 - Add rate limiting on ingest
-- User accounts and role-based access for reviewers
 - A daily spend cap for the judge
 - Measure judge accuracy against human-labelled decisions
 - Integrations for more agent frameworks
@@ -226,24 +251,15 @@ docker-compose.yml
 
 ---
 
-
 ## Screenshots
 
-### Live Dashboard
-![Guardloop live dashboard](docs/screenshots/dashboard-live.png)
+To add once captured (save them in `docs/screenshots/`):
 
-### Policy Settings
-![Guardloop policy settings](docs/screenshots/policy-settings.png)
-
-### Discord Alerts
-![Guardloop Discord alert](docs/screenshots/alerts-discord.png)
-
-### Judge Review Panel
-![Guardloop judge panel](docs/screenshots/judge-panel.png)
-
-### CI Checks
-![Guardloop CI checks passing](docs/screenshots/ci-green.png)
-
+1. `dashboard-live.png`: the live dashboard with the Live badge and pending escalations
+2. `policy-settings.png`: the default threshold and an agent override
+3. `alerts-discord.png`: a real threshold alert in Discord
+4. `judge-panel.png`: the judge panel with per-agent calibration
+5. `ci-green.png`: the CI run with all four checks passing
 
 ---
 

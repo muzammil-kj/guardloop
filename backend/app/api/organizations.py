@@ -1,8 +1,10 @@
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db.supabase_client import get_supabase
 from app.auth.api_keys import generate_api_key
 from app.auth.dependencies import get_current_org
+from app.audit import record_audit
 from app.models import (
     CreateOrganization,
     OrganizationCreated,
@@ -44,14 +46,27 @@ async def get_my_organization(org: dict = Depends(get_current_org)):
 async def create_api_key(payload: CreateApiKey, org: dict = Depends(get_current_org)):
     supabase = get_supabase()
     full_key, prefix, hashed = generate_api_key()
+
     result = supabase.table("api_keys").insert({
         "organization_id": org["id"],
         "key_hash": hashed,
         "key_prefix": prefix,
         "label": payload.label,
     }).execute()
+
     row = result.data[0]
-    return ApiKeyCreated(id=row["id"], key_prefix=prefix, api_key=full_key, label=payload.label)
+
+    record_audit(
+        supabase, org, "api_key.created", "api_key", row["id"],
+        {"label": payload.label}
+    )
+
+    return ApiKeyCreated(
+        id=row["id"],
+        key_prefix=prefix,
+        api_key=full_key,
+        label=payload.label
+    )
 
 
 @router.get("/me/api-keys", response_model=list[ApiKeyInfo])
@@ -76,6 +91,10 @@ async def revoke_api_key(key_id: int, org: dict = Depends(get_current_org)):
         .eq("organization_id", org["id"])
         .execute()
     )
+
     if not result.data:
         raise HTTPException(status_code=404, detail="API key not found")
+
+    record_audit(supabase, org, "api_key.revoked", "api_key", key_id)
+
     return {"status": "revoked"}

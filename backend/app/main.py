@@ -14,6 +14,9 @@ from app.api.alert_channels import router as alert_channels_router
 from app.api.internal import router as internal_router
 from app.api.judge import router as judge_router
 from app.api.agents import router as agents_router
+from app.api.members import router as members_router
+from app.api.me import router as me_router
+from app.api.audit import router as audit_router
 
 app = FastAPI(title="Guardloop API")
 
@@ -51,3 +54,6 @@ app.include_router(alert_channels_router)
 app.include_router(internal_router)
 app.include_router(judge_router)
 app.include_router(agents_router)
+app.include_router(members_router)
+app.include_router(me_router)
+app.include_router(audit_router)

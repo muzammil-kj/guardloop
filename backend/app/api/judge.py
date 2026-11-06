@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.auth.dependencies import get_current_org
+from app.auth.actors import get_actor
+from app.audit import record_audit
 from app.config import settings
 from app.db.supabase_client import get_supabase
 from app.judge.reviewer import review_pending
@@ -27,7 +29,7 @@ def _info(config: dict) -> JudgeSettingsInfo:
 
 
 @router.get("/settings", response_model=JudgeSettingsInfo)
-def read_settings(org: dict = Depends(get_current_org)):
+def read_settings(org: dict = Depends(get_actor)):
     return _info(get_judge_settings(get_supabase(), org["id"]))
 
 
@@ -41,11 +43,15 @@ def update_settings(payload: JudgeSettingsUpdate, org: dict = Depends(get_curren
         },
         on_conflict="organization_id",
     ).execute()
+
+    record_audit(
+        get_supabase(), org, "judge.settings_changed", "judge", None,
+        {"enabled": payload.enabled, "sample_rate": payload.sample_rate}
+    )
     return _info({"enabled": payload.enabled, "sample_rate": payload.sample_rate})
 
-
 @router.get("/summary")
-def read_summary(org: dict = Depends(get_current_org)):
+def read_summary(org: dict = Depends(get_actor)):
     supabase = get_supabase()
 
     reviewed = (
@@ -78,7 +84,7 @@ def read_summary(org: dict = Depends(get_current_org)):
 @router.get("/reviews")
 def read_reviews(
     limit: int = Query(default=10, ge=1, le=50),
-    org: dict = Depends(get_current_org),
+    org: dict = Depends(get_actor),
 ):
     result = (
         get_supabase()

@@ -112,3 +112,23 @@ class AgentPermission(BaseModel):
     daily_budget_usd: Optional[float] = None
     spent_today_usd: float
     remaining_usd: Optional[float] = None
+
+
+
+class AssignEscalation(BaseModel):
+    assignee_email: Optional[str] = Field(default=None, max_length=320)
+
+
+class MemberCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    role: Literal["owner", "reviewer", "viewer"]
+    display_name: Optional[str] = Field(default=None, max_length=120)
+
+
+class MemberInfo(BaseModel):
+    id: int
+    email: str
+    role: str
+    display_name: Optional[str] = None
+    user_id: Optional[str] = None
+    created_at: str

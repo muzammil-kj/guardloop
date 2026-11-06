@@ -1,5 +1,7 @@
+
 from fastapi import APIRouter, Depends
 
+from app.audit import record_audit
 from app.auth.dependencies import get_current_org
 from app.config import settings
 from app.db.supabase_client import get_supabase
@@ -57,4 +59,13 @@ async def set_agent_budget(
             "hard_escalate_event_types": hard_gates,
             "daily_budget_usd": payload.daily_budget_usd,
         }).execute()
-    return AgentBudgetInfo(agent_name=agent_name, daily_budget_usd=payload.daily_budget_usd)
+
+    record_audit(
+        supabase, org, "budget.set", "agent", agent_name,
+        {"daily_budget_usd": payload.daily_budget_usd}
+    )
+
+    return AgentBudgetInfo(
+        agent_name=agent_name,
+        daily_budget_usd=payload.daily_budget_usd
+    )
