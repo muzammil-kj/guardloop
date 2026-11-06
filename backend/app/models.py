@@ -95,3 +95,20 @@ class JudgeSettingsInfo(BaseModel):
     enabled: bool
     sample_rate: float
     judge_configured: bool  # whether the server has a GEMINI_API_KEY
+
+
+class AgentBudgetUpdate(BaseModel):
+    daily_budget_usd: Optional[float] = Field(default=None, gt=0, le=1_000_000)
+
+
+class AgentBudgetInfo(BaseModel):
+    agent_name: str
+    daily_budget_usd: Optional[float] = None
+
+
+class AgentPermission(BaseModel):
+    agent_name: str
+    allowed: bool
+    daily_budget_usd: Optional[float] = None
+    spent_today_usd: float
+    remaining_usd: Optional[float] = None

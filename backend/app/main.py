@@ -13,6 +13,7 @@ from app.api.realtime import router as realtime_router
 from app.api.alert_channels import router as alert_channels_router
 from app.api.internal import router as internal_router
 from app.api.judge import router as judge_router
+from app.api.agents import router as agents_router
 
 app = FastAPI(title="Guardloop API")
 
@@ -49,3 +50,4 @@ app.include_router(realtime_router)
 app.include_router(alert_channels_router)
 app.include_router(internal_router)
 app.include_router(judge_router)
+app.include_router(agents_router)

@@ -1,18 +1,20 @@
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import quote
 
 import requests
 
 
 class GuardloopError(Exception):
-    """Raised when Guardloop rejects a request, or can't be reached at all."""
+    """Guardloop rejected a request, or could not be reached."""
 
 
 @dataclass
 class IngestResult:
     event_id: int
-    status: str
+    status: str            # "approved" | "escalated" | "blocked"
     reason: Optional[str]
+    pii_redacted: bool = False
 
     @property
     def approved(self) -> bool:
@@ -22,25 +24,41 @@ class IngestResult:
     def escalated(self) -> bool:
         return self.status == "escalated"
 
+    @property
+    def blocked(self) -> bool:
+        """True when the agent is over its daily budget and must stop acting."""
+        return self.status == "blocked"
+
+
+@dataclass
+class Permission:
+    agent_name: str
+    allowed: bool
+    daily_budget_usd: Optional[float]
+    spent_today_usd: float
+    remaining_usd: Optional[float]
+
 
 class GuardloopClient:
     """
-    Minimal client for reporting AI agent decisions to Guardloop.
+    Reports AI agent decisions to Guardloop.
 
     Example:
-        client = GuardloopClient(
-            api_key="gl_live_...",
-            base_url="https://guardloop-api.onrender.com",
-        )
+        client = GuardloopClient(api_key="gl_live_...")
+
+        if not client.can_act("invoice-parser").allowed:
+            return                                   # over budget: stop here
+
         result = client.report(
             agent_name="invoice-parser",
             event_type="classification",
             confidence=0.62,
             input_summary="Invoice #4921 from Acme Corp",
-            output_summary="Classified as: needs_manual_review",
+            output_summary="needs_manual_review",
+            idempotency_key=execution_id,            # makes retries safe
         )
         if result.escalated:
-            print("A human needs to look at this one:", result.reason)
+            print("A human needs to review:", result.reason)
     """
 
     def __init__(
@@ -55,11 +73,20 @@ class GuardloopClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
-    def _headers(self) -> dict:
-        return {
+    def _headers(self, idempotency_key: Optional[str] = None) -> dict:
+        headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+        return headers
+
+    def _send(self, method, url, **kwargs):
+        try:
+            return requests.request(method, url, timeout=self.timeout, **kwargs)
+        except requests.RequestException as exc:
+            raise GuardloopError(f"Could not reach Guardloop: {type(exc).__name__}") from None
 
     def report(
         self,
@@ -71,14 +98,14 @@ class GuardloopClient:
         force_escalate: bool = False,
         escalate_reason: Optional[str] = None,
         cost_usd: float = 0.0,
+        idempotency_key: Optional[str] = None,
     ) -> IngestResult:
         """
-        Reports one agent decision to Guardloop. Guardloop decides, based on
-        your organization's configured policy, whether this is safe to
-        auto-approve or needs to be escalated to a human. Raises
-        GuardloopError if the request fails for any reason, network issues
-        included, so a calling agent can decide how to degrade gracefully
-        rather than silently assuming "approved."
+        Reports one decision. Pass idempotency_key (for example an n8n execution
+        id) so a retried call is never recorded twice.
+
+        A budget block is returned as a result with blocked == True, not raised,
+        because it is a normal answer the agent should act on.
         """
         payload = {
             "agent_name": agent_name,
@@ -90,30 +117,46 @@ class GuardloopClient:
             "escalate_reason": escalate_reason,
             "cost_usd": cost_usd,
         }
-
-        try:
-            response = requests.post(
-                f"{self.base_url}/ingest",
-                json=payload,
-                headers=self._headers(),
-                timeout=self.timeout,
-            )
-        except requests.RequestException as exc:
-            raise GuardloopError(f"Could not reach Guardloop: {exc}") from exc
+        response = self._send(
+            "POST", f"{self.base_url}/ingest",
+            json=payload, headers=self._headers(idempotency_key),
+        )
 
         if response.status_code == 401:
-            raise GuardloopError(
-                "Guardloop rejected this API key (missing, invalid, or revoked)."
-            )
+            raise GuardloopError("Guardloop rejected this API key (missing, invalid, or revoked).")
+        if response.status_code == 409:
+            raise GuardloopError("An earlier request with this idempotency key is still running. Retry shortly.")
+        if response.status_code not in (200, 429) and not response.ok:
+            raise GuardloopError(f"Guardloop returned an error: {response.status_code}")
 
-        if not response.ok:
-            raise GuardloopError(
-                f"Guardloop returned an error: {response.status_code} {response.text}"
-            )
+        try:
+            data = response.json()
+        except ValueError:
+            raise GuardloopError("Guardloop returned a response that was not JSON.") from None
 
-        data = response.json()
         return IngestResult(
-            event_id=data["event_id"],
+            event_id=data.get("event_id", 0),
             status=data["status"],
             reason=data.get("reason"),
+            pii_redacted=bool(data.get("pii_redacted", False)),
+        )
+
+    def can_act(self, agent_name: str) -> Permission:
+        """Ask before acting. Guardloop can only stop an agent that asks first."""
+        response = self._send(
+            "GET",
+            f"{self.base_url}/agents/{quote(agent_name, safe='')}/permission",
+            headers=self._headers(),
+        )
+        if response.status_code == 401:
+            raise GuardloopError("Guardloop rejected this API key (missing, invalid, or revoked).")
+        if not response.ok:
+            raise GuardloopError(f"Guardloop returned an error: {response.status_code}")
+        data = response.json()
+        return Permission(
+            agent_name=data["agent_name"],
+            allowed=data["allowed"],
+            daily_budget_usd=data.get("daily_budget_usd"),
+            spent_today_usd=data["spent_today_usd"],
+            remaining_usd=data.get("remaining_usd"),
         )
