@@ -21,7 +21,7 @@ def _has_content(row: dict) -> bool:
     )
 
 
-def _release_stale_claims(supabase, organization_id: str | None) -> None:
+def _release_stale_claims(supabase, organization_id) -> None:
     """A pass that died mid-review leaves events stuck in 'reviewing'.
     Put any claim older than STALE_CLAIM_AFTER back in the queue."""
     cutoff = (datetime.now(timezone.utc) - STALE_CLAIM_AFTER).isoformat()
@@ -60,6 +60,7 @@ def _flag_for_humans(supabase, row: dict, reason: str) -> None:
     supabase.table("escalations").insert({
         "organization_id": row["organization_id"],
         "event_id": row["id"],
+        "source": "judge",
         "reason": f"Judge disagreed with this auto-approved decision: {reason}",
         "status": "pending",
     }).execute()

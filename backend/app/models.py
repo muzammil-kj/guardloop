@@ -14,6 +14,7 @@ class IngestEvent(BaseModel):
     force_escalate: bool = False
     escalate_reason: Optional[str] = None
     cost_usd: float = 0.0
+    agent_version: Optional[str] = Field(default=None, max_length=64)
 
 
 class ResolveEscalation(BaseModel):

@@ -101,3 +101,33 @@ export async function downloadCsv(path: string, filename: string): Promise<void>
   link.click();
   URL.revokeObjectURL(url);
 }
+
+
+export interface CalibrationAgent {
+  agent_name: string;
+  reviews: number;
+  flags_confirmed: number;
+  flags_overruled: number;
+  precision: number | null;
+  precision_ci_low: number | null;
+  precision_ci_high: number | null;
+  reliable: boolean;
+}
+
+export interface Calibration extends CalibrationAgent {
+  by_agent: CalibrationAgent[];
+}
+
+export interface VersionRow {
+  agent_name: string;
+  agent_version: string;
+  first_seen: string | null;
+  events: number;
+  escalation_rate: number;
+  block_rate: number;
+  reviewed: number;
+  disagreement_rate: number | null;
+}
+
+export const getCalibration = () => call<Calibration>("/quality/calibration");
+export const getVersions = () => call<VersionRow[]>("/quality/versions");

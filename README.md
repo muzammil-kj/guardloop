@@ -30,13 +30,14 @@ AI agents are often confidently wrong, and a team running several of them has no
 | **Live dashboard** | Events and escalations update through Supabase Realtime, with a 15-second polling fallback if Realtime is unavailable. |
 | **Alerts** | Discord or Slack messages when the review queue reaches a threshold or daily spend reaches a budget. Each rule waits an hour before alerting again on the same channel. |
 | **LLM judge** | A second model re-checks a sample of auto-approved decisions. It never sees the agent's own confidence. When it disagrees, the decision goes to the review queue. Each agent gets a calibration view that flags agents whose confidence doesn't match the judge. |
+| **Agent versions** | Tag each decision with its prompt or model version. The quality page shows escalation and disagreement rates per version, so a regression after a deploy is visible. |
 | **Idempotent retries** | Send an `Idempotency-Key` with each report. A retried call returns the first result and never creates a duplicate event. |
 | **Daily spend caps** | A budget per agent, set through the API. An agent over budget gets a `429` and must stop; the block is recorded for audit. |
 | **Privacy masking** | Emails, card numbers, phone numbers and national ID numbers are masked before anything is stored or sent to the judge. |
 | **Reviewer accounts** | Team members sign in with Supabase Auth. Roles: owner, reviewer, viewer. Reviews are recorded under the reviewer's name. |
 | **Assignments and deadlines** | Each escalation has an owner and a deadline from the organization's SLA. Overdue reviews alert the organization's channels once. |
 | **Audit log and exports** | Every review, assignment, membership, policy, budget, key and channel change is recorded and can be exported as CSV. |
-| **Quality gates** | 219 backend tests, 13 SDK tests, a frontend production build, and a Docker smoke test run on every push. Deploys wait for green checks. |
+| **Quality gates** | 242 backend tests, 13 SDK tests, a frontend production build, and a Docker smoke test run on every push. Deploys wait for green checks. |
 
 ---
 
@@ -159,6 +160,8 @@ Every route below except `/health`, `POST /organizations`, and the two `/interna
 | GET | `/audit` | Recent audit entries (owner) |
 | GET | `/exports/decisions.csv` | Download decisions as CSV |
 | GET | `/exports/audit.csv` | Download the audit log as CSV (owner) |
+| GET | `/quality/calibration` | Judge precision, measured from human reviews |
+| GET | `/quality/versions` | Escalation and disagreement rates per agent version |
 | GET | `/events` | Recent events |
 | GET | `/escalations` | Escalations, filter by `status` |
 | PATCH | `/escalations/{escalation_id}/resolve` | Approve, reject, or correct an escalation |
@@ -200,7 +203,7 @@ Every route below except `/health`, `POST /organizations`, and the two `/interna
 
 ## Testing and CI
 
-- **Backend:** 219 tests with mocked network calls. They cover auth, policy resolution, escalation rules, webhook validation, alert debounce, the judge's prompt construction, verdict parsing, the review loop, CORS, and the HTTP routes.
+- **Backend:** 242 tests with mocked network calls. They cover auth, policy resolution, escalation rules, webhook validation, alert debounce, the judge's prompt construction, verdict parsing, the review loop, CORS, and the HTTP routes.
 - **SDK:** 13 tests.
 - **Frontend:** a production build, which also type-checks every page.
 - **Docker:** the backend image is built and started, and `/health` must respond.
@@ -213,7 +216,7 @@ Deploys on Render wait for CI to pass. `main` is protected, so changes arrive th
 
 ## Known limitations
 
-- **The judge is another LLM.** Its disagreement is a signal to look at, not ground truth. Its accuracy has not been measured against human labels yet.
+- **The judge is another LLM.** Its disagreement is a signal to look at, not ground truth. Its precision is measured only on cases a human reviewed (the flagged ones), so it can't show how many of its misses went unnoticed.
 - **Judge data leaves your infrastructure.** For each reviewed event, the agent name, event type, and input and output summaries are sent to Google's Gemini API. Enable it only when that is allowed. The settings page says so.
 - **Judge spend has no global cap.** Limits are per run (5 for a manual run, 20 per scheduled pass), not per day.
 - **Audit writes are best-effort.** A failed audit write is logged and doesn't block the action. Compliance customers will need a stricter mode.
@@ -234,7 +237,6 @@ Deploys on Render wait for CI to pass. `main` is protected, so changes arrive th
 
 - Add rate limiting on ingest
 - A daily spend cap for the judge
-- Measure judge accuracy against human-labelled decisions
 - Integrations for more agent frameworks
 
 ---
