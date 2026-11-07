@@ -47,6 +47,7 @@ def _insert_event(supabase, organization_id, event, input_text, output_text,
         "status": status,
         "cost_usd": cost_usd,
         "pii_redacted": pii_redacted,
+        "agent_version": (event.agent_version or "").strip() or None,
     }
     if judge_pending:
         payload["judge_status"] = "pending"

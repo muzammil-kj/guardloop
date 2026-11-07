@@ -53,6 +53,7 @@ Place it directly after the node that parses Gemini's classification.
      confidence: $json.confidence,
      input_summary: $json.cleanText,
      output_summary: $json.reason,
+     agent_version: "prompt-v3",
      cost_usd: 0
    }) }}
    ```
