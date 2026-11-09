@@ -47,7 +47,7 @@ async def resolve_escalation(
         raise HTTPException(status_code=404, detail="Escalation not found")
 
     record_audit(
-        supabase, {**actor, "actor_name": resolved_by}, "escalation.resolved",
+        supabase, {**actor, "actor_name": resolved_by}, f"escalation.{resolution.status}",
         "escalation", escalation_id,
         {"status": resolution.status, "note": resolution.resolution_note},
     )

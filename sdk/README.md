@@ -1,252 +1,153 @@
-# Guardloop
+# guardloop-sdk
 
-[![CI](https://github.com/muzammil-kj/guardloop/actions/workflows/ci.yml/badge.svg)](https://github.com/muzammil-kj/guardloop/actions/workflows/ci.yml)
+Python client for [Guardloop](https://github.com/muzammil-kj/guardloop), a guardrail and observability layer for AI agents.
 
-Guardrails and observability for AI agents.
+## Install
 
-Guardloop sits between your agents and the real world. Each agent reports its decisions to Guardloop, which decides whether a decision is safe to act on automatically or needs a person to review it. It tracks what the agents cost, alerts your team when reviews pile up or spend hits a budget, and uses a second model to double-check a sample of the decisions an agent was confident about.
-
-- **Dashboard:** https://guardloop-iota.vercel.app
-- **API docs (Swagger):** https://guardloop-api.onrender.com/docs
-
-Create your own organization from the dashboard's **New organization** tab. You get an API key once, so save it.
-
----
-
-## Why this exists
-
-AI agents are often confidently wrong, and a team running several of them has no shared place to see their decisions, their escalations, or their spend. Most of the tooling is either a paid, closed platform or tied to one framework. Guardloop is a small, framework-agnostic layer: agents report over plain HTTP, and the Python SDK wraps the same call.
-
----
-
-## What it does
-
-| Area | What you get |
-|---|---|
-| **Organizations and API keys** | Sign up, get a key, create and revoke more keys. Keys are shown once; only a SHA-256 hash is stored. |
-| **Policy engine** | An organization-wide default confidence threshold, per-agent overrides, and a list of event types that always need a human, no matter how confident the model is. |
-| **Escalation queue** | Low-confidence or hard-gated decisions wait for a person to approve or reject them, with a reason attached. |
-| **Python SDK** | `pip install guardloop-sdk`. Wraps the ingest call, returns an `approved` or `escalated` result, and raises a clear error if Guardloop is unreachable. |
-| **Live dashboard** | Events and escalations update through Supabase Realtime, with a 15-second polling fallback if Realtime is unavailable. |
-| **Alerts** | Discord or Slack messages when the review queue reaches a threshold or daily spend reaches a budget. Each rule waits an hour before alerting again on the same channel. |
-| **LLM judge** | A second model re-checks a sample of auto-approved decisions. It never sees the agent's own confidence. When it disagrees, the decision goes to the review queue. Each agent gets a calibration view that flags agents whose confidence doesn't match the judge. |
-| **Idempotent retries** | Send an `Idempotency-Key` with each report. A retried call returns the first result and never creates a duplicate event. |
-| **Daily spend caps** | A budget per agent, set through the API. An agent over budget gets a `429` and must stop; the block is recorded for audit. |
-| **Privacy masking** | Emails, card numbers, phone numbers and national ID numbers are masked before anything is stored or sent to the judge. |
-| **Quality gates** | 181 backend tests, 13 SDK tests, a frontend production build, and a Docker smoke test run on every push. Deploys wait for green checks. |
-
----
-
-## Architecture
-
-```mermaid
-flowchart LR
-    A["AI agents<br/>(n8n, Python via SDK)"] -->|"POST /ingest<br/>Bearer API key"| API["FastAPI backend<br/>(Render)"]
-    API --> DB[("Supabase Postgres<br/>RLS on every table")]
-    API -->|"low confidence or<br/>hard-gated type"| Q["Human review queue"]
-    API -->|"sample of<br/>auto-approved events"| J["LLM judge<br/>(Gemini)"]
-    J -->|"disagree"| Q
-    CRON["cron-job.org"] -->|"every 5 min<br/>X-Internal-Secret"| API
-    API -->|"queue or budget alerts"| CH["Discord / Slack webhooks"]
-    DB -->|"Realtime, scoped token"| UI["Next.js dashboard<br/>(Vercel)"]
-    UI -->|"REST, API key"| API
-    REV["Reviewer"] --> UI
+```bash
+pip install guardloop-sdk
 ```
 
-**Stack:** FastAPI, Pydantic, Supabase (Postgres, Realtime, row-level security), Next.js 16, TypeScript, Tailwind, Recharts, Gemini API, Discord and Slack webhooks, GitHub Actions, Docker. Backend on Render, frontend on Vercel.
+Requires Python 3.9 or newer.
 
----
+## Usage
 
-## How a decision flows
+```python
+from guardloop_sdk import GuardloopClient
 
-1. **Report.** An agent calls `POST /ingest` with its name, event type, confidence, and optional input and output summaries.
-2. **Decide.** Guardloop picks the policy for that agent (its own, else the organization default, else the global default). The event is escalated if the agent asked for review, if its event type is on the hard-gate list, or if its confidence is below the threshold.
-3. **Record.** The event and its status are stored, and the day's cost rolls up for that agent.
-4. **Sample.** If the organization has the judge on, a share of auto-approved events with content is queued for review.
-5. **Judge.** The judge model reads the event and returns `agree`, `disagree`, or `unsure`, with a score and a reason. A `disagree` is added to the review queue.
-6. **Alert.** On each scheduled pass, Guardloop checks queue depth and daily spend for every enabled channel and posts to Discord or Slack when a limit is crossed.
+client = GuardloopClient(api_key="gl_live_your_real_key_here")
 
----
+# 1. Ask before acting. If the agent is over its daily budget, stop.
+permission = client.can_act("invoice-parser")
+if not permission.allowed:
+    raise SystemExit("Daily budget reached; not acting.")
 
-## Quick start (local)
+# 2. Report the decision. The idempotency key makes retries safe.
+result = client.report(
+    agent_name="invoice-parser",
+    event_type="classification",
+    confidence=0.62,
+    input_summary="Invoice #4921 from Acme Corp, amount $14,200",
+    output_summary="needs_manual_review (unusual amount)",
+    cost_usd=0.0008,
+    idempotency_key="run-2026-10-26-0001",
+)
 
-**Backend**
-
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-copy .env.example .env      # then fill in the values
-python -m pytest tests/ -q
-uvicorn app.main:app --reload --port 8000
+if result.blocked:
+    print("Blocked by budget:", result.reason)
+elif result.escalated:
+    print("Escalated to a human:", result.reason)
+else:
+    print("Auto-approved.")
 ```
 
-**Frontend**
+`report` raises `GuardloopError` for authentication failures, a conflicting request still in progress, or network errors. A budget block is returned as a result (`result.blocked`), not raised.
 
-```powershell
-cd frontend
-npm install
-copy .env.local.example .env.local   # then fill in the values
-npm run dev
+Personal data (emails, card numbers, phone numbers, national ID numbers) is masked by Guardloop before it is stored. `result.pii_redacted` tells you whether masking happened.
+
+## LangChain integration
+
+Install LangChain separately:
+
+```bash
+pip install langchain-core
 ```
 
-Open http://localhost:3000 for the dashboard and http://localhost:8000/docs for the API.
+Example:
 
-**Both, with Docker**
+```python
+from langchain_core.runnables import RunnableLambda
+from guardloop_sdk import GuardloopClient
+from guardloop_sdk.langchain import GuardloopCallbackHandler
 
-```powershell
-docker compose up --build
+client = GuardloopClient(api_key="gl_live_your_real_key_here")
+
+handler = GuardloopCallbackHandler(
+    client,
+    agent_name="support-bot",
+)
+
+chain = RunnableLambda(
+    lambda inputs: {"answer": f"Processed: {inputs['question']}"}
+)
+
+result = chain.invoke(
+    {"question": "How do I reset my password?"},
+    config={"callbacks": [handler]},
+)
+
+print(result)
 ```
 
-Database setup: run the migrations in Supabase's SQL Editor, in this order: `PHASE2_MIGRATION.sql`, then `PHASE4_MIGRATION.sql`, then `PHASE5_MIGRATION.sql`. Phase 1 (`MIGRATION_PHASE1.sql`) comes first if you are upgrading the original MVP database. New projects can use `backend/app/db/schema.sql` for the base tables, followed by the phase migrations.
+Guardloop reports one event per top-level chain run. Failed runs are automatically escalated. Reporting errors are logged without interrupting the chain.
 
----
+You can also provide a confidence function:
 
-## Configuration
-
-Names only. Real values belong in `.env` and in your hosting provider's settings, never in the repository.
-
-**Backend**
-
-| Variable | Required | Purpose |
-|---|---|---|
-| `SUPABASE_URL` | yes | Your Supabase project URL |
-| `SUPABASE_SECRET_KEY` | yes | Server-side key. Never expose it to a browser. |
-| `DEFAULT_CONFIDENCE_THRESHOLD` | no (0.75) | Used when an organization has no policy |
-| `CORS_ALLOWED_ORIGINS` | no | Comma-separated browser origins allowed to call the API. Defaults to the production dashboard and `localhost:3000`. |
-| `SUPABASE_JWT_SECRET` | for live updates | Signs the short-lived tokens the dashboard uses for Realtime |
-| `INTERNAL_CRON_SECRET` | for scheduled jobs | Shared secret your scheduler sends in `X-Internal-Secret` |
-| `GEMINI_API_KEY` | for the judge | Model key for the judge. Leave unset to disable it. |
-| `JUDGE_MODEL` | no | Defaults to `gemini-3.5-flash-lite` |
-
-**Frontend** (these are public by design, so use the public anon or publishable key only)
-
-| Variable | Purpose |
-|---|---|
-| `NEXT_PUBLIC_API_URL` | Base URL of the backend, with no trailing slash |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL, for Realtime |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public key, for Realtime |
-
-If an optional backend variable is missing, only its feature reports "not configured". The rest of the API keeps working.
-
----
-
-## API reference
-
-Every route below except `/health`, `POST /organizations`, and the two `/internal` routes needs `Authorization: Bearer <api key>`. The interactive version is at `/docs`.
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/health` | Liveness check |
-| POST | `/organizations` | Create an organization; returns its first API key once |
-| GET | `/organizations/me` | The calling organization |
-| GET | `/organizations/me/api-keys` | List keys (prefixes only) |
-| POST | `/organizations/me/api-keys` | Create a key (returned once) |
-| DELETE | `/organizations/me/api-keys/{key_id}` | Revoke a key |
-| POST | `/organizations/me/realtime-token` | Short-lived token for live dashboard updates |
-| POST | `/ingest` | Report an agent decision. Optional `Idempotency-Key` header. Returns 429 when blocked by budget. |
-| GET | `/agents/{agent_name}/permission` | Ask before acting: is this agent within its budget? |
-| PUT | `/agents/{agent_name}/budget` | Set or remove an agent's daily spend cap |
-| GET | `/events` | Recent events |
-| GET | `/escalations` | Escalations, filter by `status` |
-| PATCH | `/escalations/{escalation_id}/resolve` | Approve, reject, or correct an escalation |
-| GET | `/costs` | Daily cost per agent |
-| GET | `/policies` | Organization and agent policies |
-| PUT | `/policies/default` | Set the organization default |
-| PUT | `/policies/{agent_name}` | Set an agent override |
-| DELETE | `/policies/{agent_name}` | Remove an agent override |
-| GET | `/alert-channels` | Alert channels (webhook URLs are masked) |
-| POST | `/alert-channels` | Add a Discord or Slack channel |
-| POST | `/alert-channels/{channel_id}/test` | Send a test message |
-| DELETE | `/alert-channels/{channel_id}` | Remove a channel |
-| GET | `/judge/settings` | Judge on or off, and sample rate |
-| PUT | `/judge/settings` | Change judge settings |
-| GET | `/judge/summary` | Totals and per-agent calibration |
-| GET | `/judge/reviews` | Recent judge verdicts |
-| POST | `/judge/run` | Review waiting events now (capped at 5) |
-| POST | `/internal/run-checks` | Scheduled: alert checks for all channels |
-| POST | `/internal/run-judge` | Scheduled: judge pass across all organizations |
-
----
-
-## Security design
-
-- **API keys** are 32 random bytes with a `gl_live_` prefix. Only the SHA-256 hash is stored, so a database leak doesn't expose usable keys.
-- **Tenant isolation.** Every query is filtered by the calling organization's ID, taken from the verified key.
-- **CORS.** Browsers can only call the API from the dashboard's origin and from localhost during development. Server-side callers, such as agents and the SDK, are not affected by CORS.
-- **Row-level security** is enabled on every table. The browser only ever holds a one-hour token that can read its own organization's events and escalations.
-- **Webhook safety.** Webhook URLs must be HTTPS and must point at Discord or Slack. Redirects are disabled, and the full URL is never returned by the API. This stops the server being used to reach internal addresses.
-- **Scheduled endpoints** require a shared secret compared in constant time. They refuse every request if no secret is configured.
-- **Judge hardening.** The agent's own confidence is hidden from the judge. Event text is wrapped in delimiters that the text can't close. Verdicts are parsed strictly, so anything malformed is an error and never counts as "agree". The model key travels in a header, not the URL.
-- **Fail-open ingestion.** A broken judge or missing judge table never stops an agent's call from being recorded.
-- **Masking before storage.** Personal data is masked before it reaches the database, escalations, or the judge. Masking is pattern-based and best-effort, so it reduces exposure rather than eliminating it.
-
----
-
-## Testing and CI
-
-- **Backend:** 181 tests with mocked network calls. They cover auth, policy resolution, escalation rules, webhook validation, alert debounce, the judge's prompt construction, verdict parsing, the review loop, CORS, and the HTTP routes.
-- **SDK:** 13 tests.
-- **Frontend:** a production build, which also type-checks every page.
-- **Docker:** the backend image is built and started, and `/health` must respond.
-
-During development the four most safety-critical behaviours were broken on purpose, one at a time (the atomic claim that stops double review, the prompt delimiter, the fail-open guard, and strict verdict parsing). The suite failed each time, which is how I know those tests can catch a regression.
-
-Deploys on Render wait for CI to pass. `main` is protected, so changes arrive through pull requests with green checks.
-
----
-
-## Known limitations
-
-- **The judge is another LLM.** Its disagreement is a signal to look at, not ground truth. Its accuracy has not been measured against human labels yet.
-- **Judge data leaves your infrastructure.** For each reviewed event, the agent name, event type, and input and output summaries are sent to Google's Gemini API. Enable it only when that is allowed. The settings page says so.
-- **Judge spend has no global cap.** Limits are per run (5 for a manual run, 20 per scheduled pass), not per day.
-- **No user accounts yet.** Access is by organization API key. The dashboard keeps that key in the browser's local storage, which is convenient for a demo but is not a production login.
-- **No rate limiting** on `/ingest` yet.
-- **Free hosting.** Render sleeps when idle. The five-minute scheduled job keeps the service awake but isn't a guarantee of uptime.
-- **Scheduling depends on an external service** (cron-job.org).
-- **Spend caps only stop agents that ask first.** Guardloop can't interrupt an agent that never calls `/permission` or the SDK's `can_act`.
-- **Budgets are set through the API only.** The dashboard doesn't have a budget editor yet.
-- **Masking is best-effort.** It catches common formats (emails, card numbers that pass the Luhn check, phone numbers, Pakistani CNIC, US SSN). Names, addresses and free-text personal details are not detected.
-- **Alert timing is fixed** at one hour per channel and rule, and the calibration flag (at least 5 reviews and a 20% disagreement rate) is set in code.
-
----
-
-## Roadmap
-
-- Add rate limiting on ingest
-- User accounts and role-based access for reviewers
-- A daily spend cap for the judge
-- Measure judge accuracy against human-labelled decisions
-- Integrations for more agent frameworks
-
----
-
-## Repository layout
-
-```
-backend/        FastAPI app: app/api, app/auth, app/alerts, app/judge, app/policies, tests/
-frontend/       Next.js dashboard: app/dashboard, lib/
-sdk/            guardloop-sdk Python client (see sdk/README.md)
-docker-compose.yml
-.github/workflows/ci.yml
+```python
+handler = GuardloopCallbackHandler(
+    client,
+    agent_name="support-bot",
+    confidence_fn=lambda outputs: outputs.get("confidence", 0.0),
+)
 ```
 
----
+## Decision replay
 
-## Screenshots
+Replay past decisions to see how a new version of your agent would respond before deploying it.
 
-To add once captured (save them in `docs/screenshots/`):
+Export your decisions from Guardloop's Audit page or the decisions CSV endpoint:
 
-1. `dashboard-live.png`: the live dashboard with the Live badge and pending escalations
-2. `policy-settings.png`: the default threshold and an agent override
-3. `alerts-discord.png`: a real threshold alert in Discord
-4. `judge-panel.png`: the judge panel with per-agent calibration
-5. `ci-green.png`: the CI run with all four checks passing
+`GET /exports/decisions.csv`
 
----
+Each row must contain `input_summary` and `output_summary`.
 
-## Author
+Example:
 
-Muzammil Khan. The SDK is released under the MIT license as declared in `sdk/pyproject.toml`.
+```python
+from guardloop_sdk.replay import load_decisions_csv, replay
+
+# Load previously exported decisions.
+rows = load_decisions_csv(
+    "guardloop-decisions.csv",
+    agent_name="invoice-parser",
+)
+
+# Define your updated agent.
+def updated_agent(input_text: str) -> str:
+    return "needs_manual_review"
+
+# Replay past inputs using the updated agent.
+report = replay(
+    rows,
+    agent=updated_agent,
+    limit=100,
+)
+
+print("Total decisions:", report.total)
+print("Unchanged:", report.unchanged)
+print("Changed:", report.changed)
+print("Errors:", report.errors)
+
+for change in report.changes:
+    print("Before:", change.before)
+    print("After:", change.after)
+```
+
+By default, outputs are compared while ignoring case and extra whitespace. You can provide a custom comparison function using the `same` parameter.
+
+Replay reports include:
+- `total`: number of decisions processed.
+- `unchanged`: number of outputs that stayed the same.
+- `changed`: number of outputs that changed.
+- `changes`: details of changed decisions, including previous and new outputs.
+- `errors`: decisions that could not be replayed.
+
+You can filter exported decisions by agent name and limit the number of decisions replayed.
+
+**Note:** Exported inputs are already masked for personal data. Agents that depend on original personal information may produce different results during replay.
+
+## Changelog
+
+- **0.3.0:** LangChain callback handler, decision replay, n8n report template.
+- **0.2.0:** idempotency keys, `can_act()` budget check, budget-block results, personal-data masking reported in results.
+- **0.1.0:** first release.
