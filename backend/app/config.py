@@ -1,8 +1,16 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+BACKEND_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=BACKEND_ENV_FILE,
+        extra="ignore",
+    )
 
     supabase_url: str
     supabase_secret_key: str
@@ -27,7 +35,7 @@ class Settings(BaseSettings):
 
     # Supabase publishable (anon) key. Public by design. Used to verify reviewer sign-in tokens.
     supabase_publishable_key: str = ""
-    
+
     # Phase 5, the LLM judge. Optional: with no key the judge simply stays
     # unavailable ("not configured") and nothing else is affected.
     gemini_api_key: str = ""

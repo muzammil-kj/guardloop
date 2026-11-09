@@ -1,0 +1,46 @@
+{
+  "name": "Guardloop - report a decision",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "name": "When called by another workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://guardloop-api.onrender.com/ingest",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Idempotency-Key", "value": "={{ $json.idempotency_key }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ agent_name: $json.agent_name, event_type: $json.event_type, confidence: $json.confidence, input_summary: $json.input_summary, output_summary: $json.output_summary, escalate_reason: $json.escalate_reason, force_escalate: $json.force_escalate || false, cost_usd: $json.cost_usd || 0, agent_version: $json.agent_version || null }) }}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "name": "Guardloop report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": { "id": "SELECT_YOUR_CREDENTIAL", "name": "Guardloop API key" }
+      }
+    }
+  ],
+  "connections": {
+    "When called by another workflow": {
+      "main": [[{ "node": "Guardloop report", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

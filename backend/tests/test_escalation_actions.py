@@ -37,8 +37,7 @@ def test_a_reviewer_is_recorded_by_name_not_the_body(client, make_fake_supabase,
     assert response.status_code == 200
     assert table.updates[-1]["resolved_by"] == "Sara Ali"
     assert audit.inserted["actor_name"] == "Sara Ali"
-    assert audit.inserted["action"] == "escalation.resolved"
-
+    assert audit.inserted["action"] == "escalation.approved"
 
 def test_a_service_key_still_records_the_name_it_sends(client, make_fake_supabase, fake_query):
     as_actor(SERVICE)
