@@ -45,14 +45,14 @@ AI agents are often confidently wrong, and a team running several of them has no
 
 ```mermaid
 flowchart LR
-    A["AI agents<br/>(n8n, Python via SDK)"] -->|"POST /ingest<br/>Bearer API key"| API["FastAPI backend<br/>(Render)"]
-    API --> DB[("Supabase Postgres<br/>RLS on every table")]
-    API -->|"low confidence or<br/>hard-gated type"| Q["Human review queue"]
-    API -->|"sample of<br/>auto-approved events"| J["LLM judge<br/>(Gemini)"]
+    A["AI agents: n8n and Python SDK"] -->|"POST /ingest, API key"| API["FastAPI backend on Render"]
+    API --> DB[("Supabase Postgres, RLS on every table")]
+    API -->|"low confidence or hard-gated"| Q["Human review queue"]
+    API -->|"sample of approved events"| J["LLM judge on Gemini"]
     J -->|"disagree"| Q
-    CRON["cron-job.org"] -->|"every 5 min<br/>X-Internal-Secret"| API
-    API -->|"queue or budget alerts"| CH["Discord / Slack webhooks"]
-    DB -->|"Realtime, scoped token"| UI["Next.js dashboard<br/>(Vercel)"]
+    CRON["cron-job.org"] -->|"every 5 min, X-Internal-Secret"| API
+    API -->|"queue and budget alerts"| CH["Discord and Slack webhooks"]
+    DB -->|"Realtime, scoped token"| UI["Next.js dashboard on Vercel"]
     UI -->|"REST, API key"| API
     REV["Reviewer"] --> UI
 ```
