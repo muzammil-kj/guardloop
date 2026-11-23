@@ -38,6 +38,11 @@ class Permission:
     spent_today_usd: float
     remaining_usd: Optional[float]
 
+def _is_budget_block(response) -> bool:
+    try:
+        return response.json().get("status") == "blocked"
+    except (ValueError, AttributeError):
+        return False
 
 class GuardloopClient:
     """
@@ -126,6 +131,9 @@ class GuardloopClient:
             raise GuardloopError("Guardloop rejected this API key (missing, invalid, or revoked).")
         if response.status_code == 409:
             raise GuardloopError("An earlier request with this idempotency key is still running. Retry shortly.")
+        if response.status_code == 429 and not _is_budget_block(response):
+            retry_after = response.headers.get("Retry-After", "a few")
+            raise GuardloopError(f"Guardloop rate limit reached. Retry after {retry_after} seconds.")
         if response.status_code not in (200, 429) and not response.ok:
             raise GuardloopError(f"Guardloop returned an error: {response.status_code}")
 

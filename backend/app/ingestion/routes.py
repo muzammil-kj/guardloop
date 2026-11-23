@@ -11,6 +11,7 @@ from app.ingestion.idempotency import (
 )
 from app.ingestion.service import process_event
 from app.models import IngestEvent
+from app.ratelimit import enforce_ingest_limits
 
 router = APIRouter(tags=["ingestion"])
 
@@ -25,9 +26,12 @@ async def ingest_event(
     """
     Report one agent decision. Send an Idempotency-Key header (for example the
     n8n execution or message id) so a retried call is never recorded twice.
-    Returns 200 normally, 429 when the agent is over its daily budget, and
-    409 when an identical request is still being processed.
+    Returns 200 normally, 429 when the agent is over its daily budget or over
+    its request rate (Retry-After tells you when to retry), and 409 when an
+    identical request is still being processed.
     """
+    enforce_ingest_limits(org["id"], event.agent_name)
+
     supabase = get_supabase()
 
     key = None

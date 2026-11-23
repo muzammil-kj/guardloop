@@ -186,6 +186,7 @@ Every route below except `/health`, `POST /organizations`, and the two `/interna
 
 ## Security design
 
+- **Rate limiting.** Each organization and each agent has its own request budget on `/ingest`. Going over returns 429 with a `Retry-After` header.
 - **API keys** are 32 random bytes with a `gl_live_` prefix. Only the SHA-256 hash is stored, so a database leak doesn't expose usable keys.
 - **Tenant isolation.** Every query is filtered by the calling organization's ID, taken from the verified key.
 - **CORS.** Browsers can only call the API from the dashboard's origin and from localhost during development. Server-side callers, such as agents and the SDK, are not affected by CORS.
@@ -223,7 +224,7 @@ Deploys on Render wait for CI to pass. `main` is protected, so changes arrive th
 - **Reviewer sessions last about an hour.** After that, reviewers sign in again.
 - **Admin settings need the API key.** Reviewers can't change policies, budgets, alert channels or keys.
 - **Assignments don't notify the assignee yet.** Deadline alerts go to the organization's channels.
-- **No rate limiting** on `/ingest` yet.
+- **Rate limits are per instance and in memory.** They reset when the server restarts and aren't shared across instances. This is fine on the free Render tier, which runs one instance.
 - **Free hosting.** Render sleeps when idle. The five-minute scheduled job keeps the service awake but isn't a guarantee of uptime.
 - **Scheduling depends on an external service** (cron-job.org).
 - **Spend caps only stop agents that ask first.** Guardloop can't interrupt an agent that never calls `/permission` or the SDK's `can_act`.
@@ -235,7 +236,6 @@ Deploys on Render wait for CI to pass. `main` is protected, so changes arrive th
 
 ## Roadmap
 
-- Add rate limiting on ingest
 - A daily spend cap for the judge
 - Integrations for more agent frameworks
 
