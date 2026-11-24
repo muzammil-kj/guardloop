@@ -85,7 +85,10 @@ export default function ReviewQueuePage() {
             <Link href="/audit" className="text-sm text-slate-400 hover:text-slate-200 border border-slate-800 rounded-md px-3 py-1.5">
               Audit log
             </Link>
-          )}
+          )}          
+          <Link href="/agents" className="text-sm text-slate-400 hover:text-slate-200 border border-slate-800 rounded-md px-3 py-1.5">
+            Agents
+          </Link>
         </div>
       </header>
 

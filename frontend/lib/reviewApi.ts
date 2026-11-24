@@ -131,3 +131,29 @@ export interface VersionRow {
 
 export const getCalibration = () => call<Calibration>("/quality/calibration");
 export const getVersions = () => call<VersionRow[]>("/quality/versions");
+
+
+export interface AgentOverview {
+  agent_name: string;
+  daily_budget_usd: number | null;
+  budget_source: "agent" | "organization" | null;
+  spent_today_usd: number;
+  remaining_usd: number | null;
+  killed: boolean;
+  kill_reason: string | null;
+  allowed: boolean;
+}
+
+export const getAgentsOverview = () => call<AgentOverview[]>("/agents/overview");
+
+export const setAgentBudget = (agentName: string, dailyBudgetUsd: number | null) =>
+  call(`/agents/${encodeURIComponent(agentName)}/budget`, {
+    method: "PUT",
+    body: JSON.stringify({ daily_budget_usd: dailyBudgetUsd }),
+  });
+
+export const setKillSwitch = (agentName: string, killed: boolean, reason: string | null) =>
+  call(`/agents/${encodeURIComponent(agentName)}/kill-switch`, {
+    method: "PUT",
+    body: JSON.stringify({ killed, reason }),
+  });
