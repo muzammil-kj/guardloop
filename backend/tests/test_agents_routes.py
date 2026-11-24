@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.dependencies import get_current_org
+from app.auth.actors import get_actor
 from app.main import app
 from tests.test_budget import queued
 
@@ -13,6 +14,7 @@ ORG = {"id": "org-1"}
 @pytest.fixture
 def client():
     app.dependency_overrides[get_current_org] = lambda: ORG
+    app.dependency_overrides[get_actor] = lambda: {**ORG, "actor_role": "owner", "actor_type": "api_key", "actor_name": "API key"}
     yield TestClient(app)
     app.dependency_overrides.clear()
 
