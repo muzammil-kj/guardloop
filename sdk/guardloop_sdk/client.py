@@ -129,6 +129,8 @@ class GuardloopClient:
 
         if response.status_code == 401:
             raise GuardloopError("Guardloop rejected this API key (missing, invalid, or revoked).")
+        if response.status_code == 403:
+            raise GuardloopError("This agent has been switched off by an administrator.")
         if response.status_code == 409:
             raise GuardloopError("An earlier request with this idempotency key is still running. Retry shortly.")
         if response.status_code == 429 and not _is_budget_block(response):
