@@ -18,6 +18,7 @@ from app.api.members import router as members_router
 from app.api.me import router as me_router
 from app.api.audit import router as audit_router
 from app.api.quality import router as quality_router
+from app.api.killswitch import router as killswitch_router
 
 app = FastAPI(title="Guardloop API")
 
@@ -59,3 +60,4 @@ app.include_router(members_router)
 app.include_router(me_router)
 app.include_router(audit_router)
 app.include_router(quality_router)
+app.include_router(killswitch_router)

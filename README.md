@@ -37,6 +37,7 @@ AI agents are often confidently wrong, and a team running several of them has no
 | **Reviewer accounts** | Team members sign in with Supabase Auth. Roles: owner, reviewer, viewer. Reviews are recorded under the reviewer's name. |
 | **Assignments and deadlines** | Each escalation has an owner and a deadline from the organization's SLA. Overdue reviews alert the organization's channels once. |
 | **Audit log and exports** | Every review, assignment, membership, policy, budget, key and channel change is recorded and can be exported as CSV. |
+| **Kill switch** | An owner can switch one agent off instantly. Its reports return 403 and its permission check reports it as not allowed. |
 | **Quality gates** | 242 backend tests, 13 SDK tests, a frontend production build, and a Docker smoke test run on every push. Deploys wait for green checks. |
 
 ---
@@ -152,6 +153,8 @@ Every route below except `/health`, `POST /organizations`, and the two `/interna
 | POST | `/ingest` | Report an agent decision. Optional `Idempotency-Key` header. Returns 429 when blocked by budget. |
 | GET | `/agents/{agent_name}/permission` | Ask before acting: is this agent within its budget? |
 | PUT | `/agents/{agent_name}/budget` | Set or remove an agent's daily spend cap |
+| GET | `/agents/kill-switches` | Agents currently switched off |
+| PUT | `/agents/{agent_name}/kill-switch` | Switch an agent off or back on (owner) |
 | GET | `/me` | Who is signed in, and their role |
 | GET | `/members` | List organization members |
 | POST | `/members` | Invite a member by email (owner) |

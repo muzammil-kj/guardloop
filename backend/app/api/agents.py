@@ -7,6 +7,7 @@ from app.config import settings
 from app.db.supabase_client import get_supabase
 from app.models import AgentBudgetInfo, AgentBudgetUpdate, AgentPermission
 from app.policies.budget import budget_status
+from app.killswitch import is_killed
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -30,7 +31,12 @@ def _org_default_values(supabase, organization_id: str) -> tuple[float, list]:
 async def agent_permission(agent_name: str, org: dict = Depends(get_current_org)):
     """Call this BEFORE an agent acts. If allowed is false, the agent should stop.
     Guardloop can only stop an agent that asks first."""
-    return budget_status(get_supabase(), org["id"], agent_name)
+    supabase = get_supabase()
+    status = budget_status(supabase, org["id"], agent_name)
+    killed, reason = is_killed(supabase, org["id"], agent_name)
+    if killed:
+        status = {**status, "allowed": False}
+    return {**status, "killed": killed, "kill_reason": reason}
 
 
 @router.put("/{agent_name}/budget", response_model=AgentBudgetInfo)

@@ -113,6 +113,8 @@ class AgentPermission(BaseModel):
     daily_budget_usd: Optional[float] = None
     spent_today_usd: float
     remaining_usd: Optional[float] = None
+    killed: bool = False
+    kill_reason: Optional[str] = None
 
 
 
@@ -133,3 +135,15 @@ class MemberInfo(BaseModel):
     display_name: Optional[str] = None
     user_id: Optional[str] = None
     created_at: str
+
+
+
+class KillSwitchUpdate(BaseModel):
+    killed: bool
+    reason: Optional[str] = Field(default=None, max_length=300)
+
+
+class KillSwitchInfo(BaseModel):
+    agent_name: str
+    killed: bool
+    reason: Optional[str] = None
